@@ -168,4 +168,4 @@ python test_ws.py
 
 ## License
 
-[Your License Here]
+MIT
