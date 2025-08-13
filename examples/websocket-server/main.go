@@ -268,7 +268,7 @@ func main() {
 	// Check for session token in environment variable (for non-interactive deployments)
 	if sessionToken := os.Getenv("CLAUDE_SESSION_TOKEN"); sessionToken != "" {
 		log.Println("Found CLAUDE_SESSION_TOKEN in environment, attempting authentication...")
-		if err := relay.setup.CompleteNonInteractiveAuth(sessionToken); err != nil {
+		if err := relay.setup.CompleteAuth(sessionToken); err != nil {
 			log.Printf("Warning: Failed to authenticate with session token: %v", err)
 		}
 	}
@@ -301,7 +301,7 @@ func main() {
 			fmt.Println("\n=== Non-Interactive Authentication ===")
 			
 			// Get the authentication URL
-			authURL, sessionID, err := relay.setup.StartNonInteractiveAuth()
+			authURL, sessionID, err := relay.setup.StartAuth()
 			if err != nil {
 				log.Fatal("Failed to start authentication:", err)
 			}
@@ -322,7 +322,7 @@ func main() {
 			token = strings.TrimSpace(token)
 			
 			// Complete authentication with the token
-			if err := relay.setup.CompleteNonInteractiveAuth(token); err != nil {
+			if err := relay.setup.CompleteAuth(token); err != nil {
 				log.Fatal("Failed to complete authentication:", err)
 			}
 			
@@ -334,9 +334,7 @@ func main() {
 			fmt.Println("Then follow the browser authentication flow.")
 			fmt.Println()
 			
-			if err := relay.setup.RunInteractiveAuth(); err != nil {
-				log.Fatal("Authentication failed:", err)
-			}
+			log.Fatal("Interactive authentication not supported. Use option 1 for non-interactive auth.")
 			
 		case "3":
 			// Use existing auth

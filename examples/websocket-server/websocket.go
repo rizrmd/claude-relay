@@ -186,7 +186,7 @@ func (conn *Connection) handleCommand(command string) {
 			conn.send <- []byte("AUTH_STATUS:authenticated")
 		} else {
 			// Get auth URL
-			authURL, sessionID, err := conn.server.setup.StartNonInteractiveAuth()
+			authURL, sessionID, err := conn.server.setup.StartAuth()
 			if err != nil {
 				conn.send <- []byte(fmt.Sprintf("AUTH_STATUS:error:%v", err))
 				return
@@ -202,7 +202,7 @@ func (conn *Connection) handleCommand(command string) {
 		}
 		
 		token := strings.TrimSpace(parts[1])
-		if err := conn.server.setup.CompleteNonInteractiveAuth(token); err != nil {
+		if err := conn.server.setup.CompleteAuth(token); err != nil {
 			conn.send <- []byte(fmt.Sprintf("AUTH_ERROR:%v", err))
 			return
 		}
