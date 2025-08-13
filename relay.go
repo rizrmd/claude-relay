@@ -7,7 +7,7 @@
 //
 // Basic usage:
 //
-//	import "github.com/yourusername/claude-relay"
+//	import "github.com/rizrmd/claude-relay"
 //
 //	// Create a new relay server
 //	relay, err := clauderelay.New(clauderelay.Options{

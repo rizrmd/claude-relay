@@ -10,7 +10,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/yourusername/claude-relay"
+	"github.com/rizrmd/claude-relay"
 )
 
 type Server struct {

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/yourusername/claude-relay"
+	"github.com/rizrmd/claude-relay"
 )
 
 func main() {
