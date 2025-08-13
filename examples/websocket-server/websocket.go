@@ -1,4 +1,4 @@
-package clauderelay
+package main
 
 import (
 	"bufio"
@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	clauderelay "github.com/rizrmd/claude-relay"
 	"github.com/gorilla/websocket"
 )
 
@@ -67,21 +68,21 @@ func isContentLine(text string) bool {
 }
 
 type Server struct {
-	config       *Config
+	config       *clauderelay.Config
 	connections  map[*Connection]bool
 	connectMutex sync.RWMutex
-	setup        *ClaudeSetup
+	setup        *clauderelay.ClaudeSetup
 }
 
 type Connection struct {
 	ws      *websocket.Conn
-	process *ClaudeProcess
+	process *clauderelay.ClaudeProcess
 	server  *Server
 	send    chan []byte
 	done    chan bool
 }
 
-func NewServer(config *Config, setup *ClaudeSetup) *Server {
+func NewServer(config *clauderelay.Config, setup *clauderelay.ClaudeSetup) *Server {
 	return &Server{
 		config:      config,
 		connections: make(map[*Connection]bool),
@@ -107,7 +108,7 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.connections[conn] = true
 	s.connectMutex.Unlock()
 
-	process, err := NewClaudeProcess(s.setup)
+	process, err := clauderelay.NewClaudeProcess(s.setup)
 	if err != nil {
 		log.Printf("Failed to create Claude process: %v", err)
 		ws.Close()

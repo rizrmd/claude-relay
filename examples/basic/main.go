@@ -1,31 +1,32 @@
-// Basic example of using the clauderelay library.
+// Basic example of using the clauderelay library to communicate with Claude CLI.
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
-	"os"
-	"os/signal"
-	"syscall"
 
-	"github.com/rizrmd/claude-relay"
+	clauderelay "github.com/rizrmd/claude-relay"
 )
 
 func main() {
-	// Create a new relay instance with default settings
-	relay, err := clauderelay.New(clauderelay.Options{
-		Port:          "8081",
-		BaseDir:       "./claude-instance",
-		AutoSetup:     true,
-		EnableLogging: true,
-	})
+	// Create Claude setup manager
+	setup, err := clauderelay.NewClaudeSetupWithBaseDir("./claude-instance")
 	if err != nil {
-		log.Fatal("Failed to create relay:", err)
+		log.Fatal("Failed to create setup:", err)
 	}
-	defer relay.Close()
 
-	// Check if authentication is needed
-	authenticated, err := relay.IsAuthenticated()
+	// Install Claude CLI if not already installed
+	if !setup.IsInstalled() {
+		fmt.Println("Installing Claude CLI...")
+		if err := setup.Setup(); err != nil {
+			log.Fatal("Failed to install Claude:", err)
+		}
+		fmt.Println("Claude CLI installed successfully!")
+	}
+
+	// Check authentication
+	authenticated, err := setup.CheckAuthentication()
 	if err != nil {
 		log.Printf("Warning: Failed to check authentication: %v", err)
 	}
@@ -34,29 +35,43 @@ func main() {
 		fmt.Println("========================================")
 		fmt.Println("Claude needs authentication")
 		fmt.Println("Please complete the login process")
-		fmt.Println("Type /login when prompted")
+		fmt.Println("When Claude starts, choose a theme (press 1)")
+		fmt.Println("Then type /login and follow the instructions")
 		fmt.Println("========================================")
 		
-		if err := relay.Authenticate(); err != nil {
+		if err := setup.RunClaudeLogin(); err != nil {
 			log.Fatal("Failed to authenticate:", err)
 		}
+		fmt.Println("Authentication completed!")
 	}
 
-	// Start the relay server
-	if err := relay.Start(); err != nil {
-		log.Fatal("Failed to start relay:", err)
+	// Create Claude process
+	process, err := clauderelay.NewClaudeProcess(setup)
+	if err != nil {
+		log.Fatal("Failed to create Claude process:", err)
+	}
+	defer process.Stop()
+
+	// Send some messages to Claude
+	ctx := context.Background()
+	
+	messages := []string{
+		"Hello Claude! What's 2+2?",
+		"Can you write a haiku about Go programming?",
+		"What are the benefits of using Go for backend development?",
 	}
 
-	fmt.Printf("Claude relay server started on %s\n", relay.GetWebSocketURL())
-	fmt.Println("Open client.html in your browser to connect")
-
-	// Wait for interrupt signal
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	<-sigChan
-
-	fmt.Println("\nShutting down...")
-	if err := relay.Stop(); err != nil {
-		log.Printf("Error stopping relay: %v", err)
+	for _, msg := range messages {
+		fmt.Printf("\nYou: %s\n", msg)
+		
+		response, err := process.SendMessage(ctx, msg)
+		if err != nil {
+			log.Printf("Error sending message: %v", err)
+			continue
+		}
+		
+		fmt.Printf("Claude: %s\n", response)
 	}
+
+	fmt.Println("\nConversation completed!")
 }
