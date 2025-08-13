@@ -9,7 +9,7 @@ import (
 	"os"
 	"sync"
 
-	"claude-relay"
+	"github.com/rizrmd/claude-relay"
 )
 
 type Service struct {

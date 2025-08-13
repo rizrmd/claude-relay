@@ -1,4 +1,4 @@
-module claude-relay
+module github.com/rizrmd/claude-relay
 
 go 1.24.3
 

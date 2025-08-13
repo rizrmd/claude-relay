@@ -9,7 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	clauderelay "claude-relay"
+	clauderelay "github.com/rizrmd/claude-relay"
 )
 
 var (

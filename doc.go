@@ -19,7 +19,7 @@
 //
 // Create a simple relay server:
 //
-//	import "github.com/yourusername/claude-relay"
+//	import "github.com/rizrmd/claude-relay"
 //
 //	func main() {
 //		// Create relay with automatic setup

@@ -6,7 +6,7 @@ import (
 	"log"
 	"os"
 
-	"claude-relay"
+	"github.com/rizrmd/claude-relay"
 )
 
 func main() {

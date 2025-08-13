@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"claude-relay"
+	"github.com/rizrmd/claude-relay"
 )
 
 func main() {
