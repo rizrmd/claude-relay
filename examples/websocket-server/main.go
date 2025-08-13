@@ -259,15 +259,15 @@ func main() {
 
 	if !authenticated {
 		fmt.Println("========================================")
-		fmt.Println("Claude needs authentication")
-		fmt.Println("Please complete the login process")
-		fmt.Println("When Claude starts, choose a theme (press 1)")
-		fmt.Println("Then type /login and follow the instructions")
+		fmt.Println("⚠️  Claude is not authenticated!")
+		fmt.Println()
+		fmt.Println("Please run authentication separately:")
+		fmt.Println("  go run ../../cmd/claude-relay -auth")
+		fmt.Println()
+		fmt.Println("Or use the existing auth from main installation:")
+		fmt.Println("  cp -r ../../.claude-home/.config/claude .claude-home/.config/")
 		fmt.Println("========================================")
-		
-		if err := relay.Authenticate(); err != nil {
-			log.Fatal("Failed to authenticate:", err)
-		}
+		log.Fatal("Authentication required before starting server")
 	}
 
 	// Start server

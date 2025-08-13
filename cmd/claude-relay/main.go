@@ -3,7 +3,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -101,10 +100,10 @@ func main() {
 		if err != nil {
 			log.Fatal("Failed to create Claude process:", err)
 		}
-		defer process.Stop()
+		defer process.Kill()
+		defer process.Cleanup()
 
-		ctx := context.Background()
-		response, err := process.SendMessage(ctx, *message)
+		response, err := process.SendMessage(*message)
 		if err != nil {
 			log.Fatal("Failed to send message:", err)
 		}
