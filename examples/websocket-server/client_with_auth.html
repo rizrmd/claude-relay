@@ -405,7 +405,7 @@
         }
 
         function handleAuthStatus(message) {
-            const parts = message.split(':');
+            const parts = message.split(':', 3);
             
             if (parts[1] === 'authenticated') {
                 isAuthenticated = true;
@@ -413,19 +413,33 @@
                 enableChat();
                 hideAuthModal();
             } else if (parts[1] === 'not_authenticated') {
-                authUrl = parts[2] || 'https://console.anthropic.com/login';
-                sessionId = parts[3] || '';
-                showAuthModal();
+                const instructions = parts[2] || 'Run: claude setup-token';
+                showAuthModal(instructions);
             } else if (parts[1] === 'error') {
                 appendMessage('error', `Authentication check failed: ${parts[2]}`);
             }
         }
 
-        function showAuthModal() {
+        function showAuthModal(instructions) {
             document.getElementById('authModal').classList.add('active');
-            document.getElementById('authUrl').href = authUrl;
-            document.getElementById('authStep1').style.display = 'block';
-            document.getElementById('authStep2').style.display = 'none';
+            
+            // Update the auth modal to show setup-token instructions
+            const authContent = document.querySelector('.auth-content');
+            authContent.innerHTML = `
+                <h2>Authentication Required</h2>
+                <p>Claude CLI needs to be authenticated to continue.</p>
+                
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin: 20px 0;">
+                    <p><strong>Run this command in your terminal:</strong></p>
+                    <code style="display: block; background: #e9ecef; padding: 10px; border-radius: 5px; font-family: monospace;">
+                        ${instructions}
+                    </code>
+                </div>
+                
+                <p>After authentication is complete, this page will automatically connect.</p>
+                <button id="retryButton" class="auth-button" onclick="location.reload()">Retry Connection</button>
+            `;
+            
             updateStatus('Authentication Required', 'authenticating');
         }
 

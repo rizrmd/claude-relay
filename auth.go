@@ -3,45 +3,38 @@ package clauderelay
 import (
 	"fmt"
 	"log"
-	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"time"
 )
 
-// StartAuth initiates authentication and returns the OAuth URL and session ID
-func (cs *ClaudeSetup) StartAuth() (authURL string, sessionID string, err error) {
-	log.Println("Starting authentication flow...")
+// RunSetupToken runs Claude CLI's setup-token command interactively
+func (cs *ClaudeSetup) RunSetupToken() error {
+	log.Println("Running Claude CLI setup-token...")
 	
-	// Generate a unique session ID for this auth attempt
-	sessionID = fmt.Sprintf("claude-auth-%d", time.Now().Unix())
+	cmd := exec.Command(cs.claudePath, "setup-token")
+	cmd.Env = cs.GetClaudeEnv()
+	cmd.Dir = cs.baseDir
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 	
-	// Get the correct OAuth URL for Claude CLI
-	authURL = cs.buildClaudeOAuthURL()
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("setup-token command failed: %w", err)
+	}
 	
-	log.Printf("Authentication URL: %s", authURL)
-	log.Printf("Session ID: %s", sessionID)
+	// Verify authentication worked
+	if authenticated, _ := cs.CheckAuthentication(); !authenticated {
+		return fmt.Errorf("authentication was not completed")
+	}
 	
-	return authURL, sessionID, nil
+	log.Println("Authentication completed successfully!")
+	return nil
 }
 
-// buildClaudeOAuthURL constructs the correct OAuth URL for Claude CLI
-func (cs *ClaudeSetup) buildClaudeOAuthURL() string {
-	// These are the exact OAuth configuration values used by Claude CLI
-	// Extracted from the Claude CLI source code
-	baseURL := "https://console.anthropic.com/oauth/authorize"
-	clientID := "9d1c250a-e61b-44d9-88ed-5944d1962f5e" // Official Claude CLI client ID
-	redirectURI := "http://localhost:54545/callback"   // Default redirect port for Claude CLI
-	scopes := "org:create_api_key user:profile user:inference" // Required scopes
-	
-	// URL encode the parameters properly
-	params := url.Values{}
-	params.Set("response_type", "code")
-	params.Set("client_id", clientID)
-	params.Set("redirect_uri", redirectURI)
-	params.Set("scope", scopes)
-	
-	return fmt.Sprintf("%s?%s", baseURL, params.Encode())
+// GetSetupTokenInstructions returns instructions for manual authentication
+func (cs *ClaudeSetup) GetSetupTokenInstructions() string {
+	return fmt.Sprintf("Run this command to authenticate:\n%s setup-token", cs.claudePath)
 }
 
 // CompleteAuth completes authentication using a session token

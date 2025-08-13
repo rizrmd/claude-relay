@@ -185,13 +185,9 @@ func (conn *Connection) handleCommand(command string) {
 		if authenticated {
 			conn.send <- []byte("AUTH_STATUS:authenticated")
 		} else {
-			// Get auth URL
-			authURL, sessionID, err := conn.server.setup.StartAuth()
-			if err != nil {
-				conn.send <- []byte(fmt.Sprintf("AUTH_STATUS:error:%v", err))
-				return
-			}
-			conn.send <- []byte(fmt.Sprintf("AUTH_STATUS:not_authenticated:%s:%s", authURL, sessionID))
+			// Provide setup-token instructions
+			instructions := conn.server.setup.GetSetupTokenInstructions()
+			conn.send <- []byte(fmt.Sprintf("AUTH_STATUS:not_authenticated:%s", instructions))
 		}
 		
 	case "/auth-token":

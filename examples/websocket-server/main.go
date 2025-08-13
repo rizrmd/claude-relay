@@ -285,8 +285,8 @@ func main() {
 		fmt.Println()
 		fmt.Println("Choose authentication method:")
 		fmt.Println()
-		fmt.Println("1. Non-Interactive (for servers/automation)")
-		fmt.Println("2. Interactive (opens Claude CLI)")
+		fmt.Println("1. Run setup-token command now")
+		fmt.Println("2. Exit (run 'claude setup-token' manually)")
 		fmt.Println("3. Use existing auth files")
 		fmt.Println()
 		fmt.Print("Enter choice (1-3): ")
@@ -297,44 +297,21 @@ func main() {
 		
 		switch choice {
 		case "1":
-			// Non-interactive authentication
-			fmt.Println("\n=== Non-Interactive Authentication ===")
-			
-			// Get the authentication URL
-			authURL, sessionID, err := relay.setup.StartAuth()
-			if err != nil {
-				log.Fatal("Failed to start authentication:", err)
-			}
-			
-			fmt.Println("\n📌 Authentication Instructions:")
-			fmt.Printf("1. Visit this URL in your browser:\n   %s\n", authURL)
-			fmt.Println("2. Complete the login process")
-			fmt.Println("3. After successful login, you'll receive a session token")
-			fmt.Printf("4. Session ID: %s\n", sessionID)
+			// Use Claude CLI setup-token command
+			fmt.Println("\n=== Claude CLI Authentication ===")
+			fmt.Println("Running Claude CLI setup-token command...")
 			fmt.Println()
-			fmt.Println("Enter the session token you received after login:")
-			fmt.Print("Token: ")
 			
-			token, err := reader.ReadString('\n')
-			if err != nil {
-				log.Fatal("Failed to read token:", err)
-			}
-			token = strings.TrimSpace(token)
-			
-			// Complete authentication with the token
-			if err := relay.setup.CompleteAuth(token); err != nil {
-				log.Fatal("Failed to complete authentication:", err)
+			if err := relay.setup.RunSetupToken(); err != nil {
+				log.Fatal("Authentication failed:", err)
 			}
 			
 		case "2":
-			// Interactive authentication
-			fmt.Println("\n=== Interactive Authentication ===")
-			fmt.Println("Starting Claude CLI for authentication...")
-			fmt.Println("When Claude opens, type: /login")
-			fmt.Println("Then follow the browser authentication flow.")
-			fmt.Println()
-			
-			log.Fatal("Interactive authentication not supported. Use option 1 for non-interactive auth.")
+			// Exit with instructions
+			fmt.Println("\n=== Manual Authentication ===")
+			fmt.Printf("Run this command in a separate terminal:\n%s\n\n", relay.setup.GetSetupTokenInstructions())
+			fmt.Println("Then restart this server.")
+			os.Exit(0)
 			
 		case "3":
 			// Use existing auth
