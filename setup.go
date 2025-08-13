@@ -394,6 +394,11 @@ func (cs *ClaudeSetup) CopyAuthFrom(sourceDir string) error {
 	return nil
 }
 
+// GetAuthURL returns the URL where users can get their Claude API key
+func (cs *ClaudeSetup) GetAuthURL() string {
+	return "https://console.anthropic.com/settings/keys"
+}
+
 // SetAuthToken sets the Claude Code CLI authentication token programmatically
 // Note: This is NOT a Claude API key, but rather the auth token from Claude Code CLI login
 func (cs *ClaudeSetup) SetAuthToken(authToken string) error {

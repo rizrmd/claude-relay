@@ -4,12 +4,14 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -261,13 +263,36 @@ func main() {
 		fmt.Println("========================================")
 		fmt.Println("⚠️  Claude is not authenticated!")
 		fmt.Println()
-		fmt.Println("Please run authentication separately:")
-		fmt.Println("  go run ../../cmd/claude-relay -auth")
+		fmt.Println("To authenticate, you need a Claude API key.")
 		fmt.Println()
-		fmt.Println("Or use the existing auth from main installation:")
-		fmt.Println("  cp -r ../../.claude-home/.config/claude .claude-home/.config/")
+		fmt.Printf("1. Visit: %s\n", relay.setup.GetAuthURL())
+		fmt.Println("2. Sign in or create an account")
+		fmt.Println("3. Generate an API key")
+		fmt.Println("4. Enter your API key below:")
 		fmt.Println("========================================")
-		log.Fatal("Authentication required before starting server")
+		fmt.Print("\nAPI Key: ")
+		
+		// Read API key from user (use bufio to handle spaces in key)
+		reader := bufio.NewReader(os.Stdin)
+		apiKey, err := reader.ReadString('\n')
+		if err != nil {
+			log.Fatal("Failed to read API key:", err)
+		}
+		apiKey = strings.TrimSpace(apiKey)
+		
+		// Set the auth token
+		if err := relay.setup.SetAuthToken(apiKey); err != nil {
+			log.Fatal("Failed to set authentication token:", err)
+		}
+		
+		// Verify authentication worked
+		authenticated, err = relay.IsAuthenticated()
+		if err != nil || !authenticated {
+			log.Fatal("Authentication failed. Please check your API key and try again.")
+		}
+		
+		fmt.Println("\n✅ Authentication successful!")
+		fmt.Println("========================================")
 	}
 
 	// Start server
