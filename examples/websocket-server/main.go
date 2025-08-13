@@ -261,34 +261,38 @@ func main() {
 
 	if !authenticated {
 		fmt.Println("========================================")
-		fmt.Println("⚠️  Claude is not authenticated!")
+		fmt.Println("⚠️  Claude CLI is not authenticated!")
 		fmt.Println()
-		fmt.Println("To authenticate, you need a Claude API key.")
+		fmt.Println("Authentication Options:")
 		fmt.Println()
-		fmt.Printf("1. Visit: %s\n", relay.setup.GetAuthURL())
-		fmt.Println("2. Sign in or create an account")
-		fmt.Println("3. Generate an API key")
-		fmt.Println("4. Enter your API key below:")
+		fmt.Println("1. Interactive Authentication (Recommended)")
+		fmt.Println("   The Claude CLI will open for you to type /login")
+		fmt.Println("   A browser will open for authentication")
+		fmt.Println()
+		fmt.Println("2. Copy existing authentication")
+		fmt.Println("   If you have authenticated elsewhere, copy:")
+		fmt.Println("   cp -r /path/to/.claude-home/.config/claude .claude-home/.config/")
+		fmt.Println()
 		fmt.Println("========================================")
-		fmt.Print("\nAPI Key: ")
+		fmt.Print("\nPress Enter to start interactive authentication, or Ctrl+C to exit: ")
 		
-		// Read API key from user (use bufio to handle spaces in key)
 		reader := bufio.NewReader(os.Stdin)
-		apiKey, err := reader.ReadString('\n')
-		if err != nil {
-			log.Fatal("Failed to read API key:", err)
-		}
-		apiKey = strings.TrimSpace(apiKey)
+		reader.ReadString('\n')
 		
-		// Set the auth token
-		if err := relay.setup.SetAuthToken(apiKey); err != nil {
-			log.Fatal("Failed to set authentication token:", err)
+		// Run interactive authentication
+		fmt.Println("\nStarting Claude CLI for authentication...")
+		fmt.Println("When Claude opens, type: /login")
+		fmt.Println("Then follow the browser authentication flow.")
+		fmt.Println()
+		
+		if err := relay.setup.RunInteractiveAuth(); err != nil {
+			log.Fatal("Authentication failed:", err)
 		}
 		
 		// Verify authentication worked
 		authenticated, err = relay.IsAuthenticated()
 		if err != nil || !authenticated {
-			log.Fatal("Authentication failed. Please check your API key and try again.")
+			log.Fatal("Authentication was not completed successfully")
 		}
 		
 		fmt.Println("\n✅ Authentication successful!")

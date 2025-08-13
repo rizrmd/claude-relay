@@ -199,17 +199,26 @@ claude-relay/
 
 ## Authentication
 
-Claude CLI uses browser-based authentication (not API keys):
+Claude CLI uses browser-based OAuth authentication (NOT API keys):
 
 1. Run `/login` command in Claude CLI
 2. Browser opens for Anthropic account login
-3. Token saved in `.claude-home/.config/claude/auth.json`
+3. Session token saved in `.claude-home/.config/claude/auth.json`
 
 ### Interactive Authentication
 
 ```go
+// Run Claude CLI interactively for authentication
 err := setup.RunClaudeLogin()
-// User completes browser authentication
+// User types /login in Claude CLI
+// Browser opens for authentication
+// User completes OAuth flow
+```
+
+Or use the helper for better UX:
+```go
+err := setup.RunInteractiveAuth()
+// Guides user through the authentication process
 ```
 
 ### Pre-configured Authentication
