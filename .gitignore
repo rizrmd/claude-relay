@@ -1,0 +1,62 @@
+# Binaries
+claude-relay
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Go workspace file
+go.work
+
+# Dependency directories
+vendor/
+
+# Claude installation directories
+.bun/
+.claude-home/
+claude-relay-*/
+
+# Instance directories from examples
+claude-instance/
+claude-1/
+claude-2/
+claude-3/
+claude-apikey/
+claude-callback/
+claude-embedded/
+claude-webservice/
+claude-instance-1/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Logs
+*.log
+
+# Environment files
+.env
+.env.local
+
+# Build artifacts
+dist/
+build/
