@@ -253,6 +253,14 @@ func main() {
 	}
 	defer relay.Close()
 
+	// Check for session token in environment variable (for non-interactive deployments)
+	if sessionToken := os.Getenv("CLAUDE_SESSION_TOKEN"); sessionToken != "" {
+		log.Println("Found CLAUDE_SESSION_TOKEN in environment, attempting authentication...")
+		if err := relay.setup.CompleteNonInteractiveAuth(sessionToken); err != nil {
+			log.Printf("Warning: Failed to authenticate with session token: %v", err)
+		}
+	}
+	
 	// Check authentication
 	authenticated, err := relay.IsAuthenticated()
 	if err != nil {
@@ -263,30 +271,71 @@ func main() {
 		fmt.Println("========================================")
 		fmt.Println("⚠️  Claude CLI is not authenticated!")
 		fmt.Println()
-		fmt.Println("Authentication Options:")
+		fmt.Println("Choose authentication method:")
 		fmt.Println()
-		fmt.Println("1. Interactive Authentication (Recommended)")
-		fmt.Println("   The Claude CLI will open for you to type /login")
-		fmt.Println("   A browser will open for authentication")
+		fmt.Println("1. Non-Interactive (for servers/automation)")
+		fmt.Println("2. Interactive (opens Claude CLI)")
+		fmt.Println("3. Use existing auth files")
 		fmt.Println()
-		fmt.Println("2. Copy existing authentication")
-		fmt.Println("   If you have authenticated elsewhere, copy:")
-		fmt.Println("   cp -r /path/to/.claude-home/.config/claude .claude-home/.config/")
-		fmt.Println()
-		fmt.Println("========================================")
-		fmt.Print("\nPress Enter to start interactive authentication, or Ctrl+C to exit: ")
+		fmt.Print("Enter choice (1-3): ")
 		
 		reader := bufio.NewReader(os.Stdin)
-		reader.ReadString('\n')
+		choice, _ := reader.ReadString('\n')
+		choice = strings.TrimSpace(choice)
 		
-		// Run interactive authentication
-		fmt.Println("\nStarting Claude CLI for authentication...")
-		fmt.Println("When Claude opens, type: /login")
-		fmt.Println("Then follow the browser authentication flow.")
-		fmt.Println()
-		
-		if err := relay.setup.RunInteractiveAuth(); err != nil {
-			log.Fatal("Authentication failed:", err)
+		switch choice {
+		case "1":
+			// Non-interactive authentication
+			fmt.Println("\n=== Non-Interactive Authentication ===")
+			
+			// Get the authentication URL
+			authURL, sessionID, err := relay.setup.StartNonInteractiveAuth()
+			if err != nil {
+				log.Fatal("Failed to start authentication:", err)
+			}
+			
+			fmt.Println("\n📌 Authentication Instructions:")
+			fmt.Printf("1. Visit this URL in your browser:\n   %s\n", authURL)
+			fmt.Println("2. Complete the login process")
+			fmt.Println("3. After successful login, you'll receive a session token")
+			fmt.Printf("4. Session ID: %s\n", sessionID)
+			fmt.Println()
+			fmt.Println("Enter the session token you received after login:")
+			fmt.Print("Token: ")
+			
+			token, err := reader.ReadString('\n')
+			if err != nil {
+				log.Fatal("Failed to read token:", err)
+			}
+			token = strings.TrimSpace(token)
+			
+			// Complete authentication with the token
+			if err := relay.setup.CompleteNonInteractiveAuth(token); err != nil {
+				log.Fatal("Failed to complete authentication:", err)
+			}
+			
+		case "2":
+			// Interactive authentication
+			fmt.Println("\n=== Interactive Authentication ===")
+			fmt.Println("Starting Claude CLI for authentication...")
+			fmt.Println("When Claude opens, type: /login")
+			fmt.Println("Then follow the browser authentication flow.")
+			fmt.Println()
+			
+			if err := relay.setup.RunInteractiveAuth(); err != nil {
+				log.Fatal("Authentication failed:", err)
+			}
+			
+		case "3":
+			// Use existing auth
+			fmt.Println("\n=== Using Existing Authentication ===")
+			fmt.Println("Copy auth files from another installation:")
+			fmt.Println("cp -r /path/to/.claude-home/.config/claude .claude-home/.config/")
+			fmt.Println()
+			log.Fatal("Please copy the auth files and restart the server")
+			
+		default:
+			log.Fatal("Invalid choice")
 		}
 		
 		// Verify authentication worked

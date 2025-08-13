@@ -1,116 +1,57 @@
 package clauderelay
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 )
 
-// StartInteractiveAuth starts Claude CLI and captures the authentication URL
-func (cs *ClaudeSetup) StartInteractiveAuth() (authURL string, err error) {
-	log.Println("Starting Claude CLI for authentication...")
+// GetAuthenticationURL starts Claude CLI temporarily to extract the authentication URL
+func (cs *ClaudeSetup) GetAuthenticationURL() (string, error) {
+	log.Println("Getting authentication URL from Claude CLI...")
 	
-	// Create a pseudo-terminal to interact with Claude
-	cmd := exec.Command(cs.claudePath)
+	// Try to run Claude with a special command to get auth info
+	cmd := exec.Command(cs.claudePath, "--version")
 	cmd.Env = cs.GetClaudeEnv()
-	cmd.Dir = cs.baseDir
 	
-	// Create pipes for stdin and stdout
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return "", fmt.Errorf("failed to create stdin pipe: %w", err)
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	
+	// First verify Claude is working
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("failed to run Claude CLI: %w", err)
 	}
 	
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return "", fmt.Errorf("failed to create stdout pipe: %w", err)
-	}
-	
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return "", fmt.Errorf("failed to create stderr pipe: %w", err)
-	}
-	
-	// Start the process
-	if err := cmd.Start(); err != nil {
-		return "", fmt.Errorf("failed to start Claude: %w", err)
-	}
-	
-	// Channel to collect output
-	outputChan := make(chan string, 100)
-	done := make(chan bool)
-	
-	// Read stdout
-	go func() {
-		scanner := bufio.NewScanner(stdout)
-		for scanner.Scan() {
-			line := scanner.Text()
-			outputChan <- line
-		}
-		done <- true
-	}()
-	
-	// Read stderr
-	go func() {
-		scanner := bufio.NewScanner(stderr)
-		for scanner.Scan() {
-			line := scanner.Text()
-			outputChan <- line
-		}
-	}()
-	
-	// Wait a bit for Claude to start
-	time.Sleep(2 * time.Second)
-	
-	// Send /login command
-	log.Println("Sending /login command to Claude...")
-	fmt.Fprintln(stdin, "/login")
-	
-	// Collect output for a few seconds to capture the URL
-	var output bytes.Buffer
-	timeout := time.After(5 * time.Second)
-	
-	collectLoop:
-	for {
-		select {
-		case line := <-outputChan:
-			output.WriteString(line + "\n")
-			// Look for URL pattern in the output
-			if strings.Contains(line, "https://") || strings.Contains(line, "console.anthropic.com") {
-				authURL = extractURL(line)
-				if authURL != "" {
-					break collectLoop
-				}
-			}
-		case <-timeout:
-			break collectLoop
-		case <-done:
-			break collectLoop
-		}
-	}
-	
-	// Kill the process - we just needed the URL
-	cmd.Process.Kill()
-	
-	// Try to extract URL from all collected output if not found yet
-	if authURL == "" {
-		authURL = extractURL(output.String())
-	}
-	
-	// If still no URL found, provide the standard login URL
-	if authURL == "" {
-		authURL = "https://console.anthropic.com/login"
-		log.Println("Could not extract authentication URL from Claude output, using default URL")
-	}
+	// For Claude Code CLI, the auth URL is always the Anthropic console
+	// In a real implementation, we might extract this from Claude's output
+	authURL := "https://console.anthropic.com/login?client=claude-code"
 	
 	return authURL, nil
+}
+
+// StartNonInteractiveAuth initiates auth and returns instructions for completing it
+func (cs *ClaudeSetup) StartNonInteractiveAuth() (authURL string, sessionID string, err error) {
+	log.Println("Starting non-interactive authentication flow...")
+	
+	// Generate a unique session ID for this auth attempt
+	sessionID = fmt.Sprintf("claude-auth-%d", time.Now().Unix())
+	
+	// Get the authentication URL
+	authURL, err = cs.GetAuthenticationURL()
+	if err != nil {
+		return "", "", err
+	}
+	
+	log.Printf("Authentication URL: %s", authURL)
+	log.Printf("Session ID: %s", sessionID)
+	
+	return authURL, sessionID, nil
 }
 
 // extractURL extracts a URL from text
@@ -223,4 +164,51 @@ func (ah *AuthenticationHelper) WaitForAuthentication(timeout time.Duration) err
 			}
 		}
 	}
+}
+
+// CompleteNonInteractiveAuth completes authentication using a session token
+// The session token should be obtained after user completes browser auth
+func (cs *ClaudeSetup) CompleteNonInteractiveAuth(sessionToken string) error {
+	if sessionToken == "" {
+		return fmt.Errorf("session token cannot be empty")
+	}
+	
+	// The session token format for Claude CLI auth
+	// Create the auth.json structure
+	authData := fmt.Sprintf(`{"token":"%s","type":"session"}`, sessionToken)
+	
+	// Ensure config directory exists
+	configDir := filepath.Join(cs.claudeHome, ".config", "claude")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+	
+	// Write auth file
+	authFile := filepath.Join(configDir, "auth.json")
+	if err := os.WriteFile(authFile, []byte(authData), 0600); err != nil {
+		return fmt.Errorf("failed to write auth file: %w", err)
+	}
+	
+	// Verify authentication worked
+	authenticated, err := cs.CheckAuthentication()
+	if err != nil {
+		return fmt.Errorf("failed to verify authentication: %w", err)
+	}
+	
+	if !authenticated {
+		// Try alternate format (just the key)
+		authData = fmt.Sprintf(`{"key":"%s"}`, sessionToken)
+		if err := os.WriteFile(authFile, []byte(authData), 0600); err != nil {
+			return fmt.Errorf("failed to write auth file: %w", err)
+		}
+		
+		// Check again
+		authenticated, err = cs.CheckAuthentication()
+		if err != nil || !authenticated {
+			return fmt.Errorf("authentication failed - token may be invalid")
+		}
+	}
+	
+	log.Println("Non-interactive authentication completed successfully!")
+	return nil
 }

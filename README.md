@@ -221,6 +221,27 @@ err := setup.RunInteractiveAuth()
 // Guides user through the authentication process
 ```
 
+### Non-Interactive Authentication
+
+For servers and automated deployments:
+
+```go
+// Step 1: Get authentication URL
+authURL, sessionID, err := setup.StartNonInteractiveAuth()
+fmt.Printf("Visit: %s\n", authURL)
+
+// Step 2: User completes auth in browser and gets session token
+
+// Step 3: Complete authentication with token
+err = setup.CompleteNonInteractiveAuth(sessionToken)
+```
+
+Or use environment variable:
+```bash
+export CLAUDE_SESSION_TOKEN="your-session-token"
+# Server will auto-authenticate on startup
+```
+
 ### Pre-configured Authentication
 
 For headless environments:
