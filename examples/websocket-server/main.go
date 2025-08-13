@@ -215,7 +215,19 @@ func (r *Relay) handleHealth(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *Relay) handleClient(w http.ResponseWriter, req *http.Request) {
-	http.ServeFile(w, req, "client.html")
+	// Check if authenticated to serve appropriate client
+	authenticated, _ := r.setup.CheckAuthentication()
+	if authenticated {
+		// Try to serve regular client first, fall back to auth client
+		if _, err := os.Stat("client.html"); err == nil {
+			http.ServeFile(w, req, "client.html")
+		} else {
+			http.ServeFile(w, req, "client_with_auth.html")
+		}
+	} else {
+		// Serve auth-enabled client
+		http.ServeFile(w, req, "client_with_auth.html")
+	}
 }
 
 // IsAuthenticated checks if Claude is authenticated.

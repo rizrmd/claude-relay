@@ -5,6 +5,7 @@ A complete WebSocket server implementation using the Claude Relay library, provi
 ## Features
 
 - 🌐 WebSocket endpoint for real-time Claude communication
+- 🔐 Built-in authentication flow through WebSocket
 - 💬 Web UI with conversation management
 - ↩️ Undo/restore conversation functionality  
 - 📊 Progress indicators during Claude processing

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -88,9 +89,16 @@ func (conn *Connection) readPump() {
 			break
 		}
 
+		messageStr := string(message)
+		
+		// Handle special commands
+		if strings.HasPrefix(messageStr, "/") {
+			conn.handleCommand(messageStr)
+			continue
+		}
+		
+		// Regular message processing
 		if conn.process != nil {
-			messageStr := string(message)
-			
 			// Send initial thinking indicator
 			select {
 			case conn.send <- []byte("🤔 Claude is thinking..."):
@@ -101,6 +109,12 @@ func (conn *Connection) readPump() {
 			// Process message with Claude
 			response, err := conn.process.SendMessage(messageStr)
 			if err != nil {
+				// Check if it's an auth error
+				if strings.Contains(err.Error(), "authentication") || strings.Contains(err.Error(), "Invalid API key") {
+					conn.send <- []byte("AUTH_REQUIRED")
+					continue
+				}
+				
 				errMsg := fmt.Sprintf("❌ Error: %v", err)
 				select {
 				case conn.send <- []byte(errMsg):
@@ -116,6 +130,9 @@ func (conn *Connection) readPump() {
 			case <-conn.done:
 				return
 			}
+		} else {
+			// No process available, likely need auth
+			conn.send <- []byte("AUTH_REQUIRED")
 		}
 	}
 }
@@ -149,6 +166,67 @@ func (conn *Connection) writePump() {
 		case <-conn.done:
 			return
 		}
+	}
+}
+
+func (conn *Connection) handleCommand(command string) {
+	parts := strings.SplitN(command, ":", 2)
+	cmd := strings.TrimSpace(parts[0])
+	
+	switch cmd {
+	case "/auth-status":
+		// Check authentication status
+		authenticated, err := conn.server.setup.CheckAuthentication()
+		if err != nil {
+			conn.send <- []byte(fmt.Sprintf("AUTH_STATUS:error:%v", err))
+			return
+		}
+		
+		if authenticated {
+			conn.send <- []byte("AUTH_STATUS:authenticated")
+		} else {
+			// Get auth URL
+			authURL, sessionID, err := conn.server.setup.StartNonInteractiveAuth()
+			if err != nil {
+				conn.send <- []byte(fmt.Sprintf("AUTH_STATUS:error:%v", err))
+				return
+			}
+			conn.send <- []byte(fmt.Sprintf("AUTH_STATUS:not_authenticated:%s:%s", authURL, sessionID))
+		}
+		
+	case "/auth-token":
+		// Set authentication token
+		if len(parts) < 2 {
+			conn.send <- []byte("AUTH_ERROR:Token required")
+			return
+		}
+		
+		token := strings.TrimSpace(parts[1])
+		if err := conn.server.setup.CompleteNonInteractiveAuth(token); err != nil {
+			conn.send <- []byte(fmt.Sprintf("AUTH_ERROR:%v", err))
+			return
+		}
+		
+		// Verify authentication worked
+		authenticated, _ := conn.server.setup.CheckAuthentication()
+		if authenticated {
+			// Create new process for this connection
+			process, err := clauderelay.NewClaudeProcess(conn.server.setup)
+			if err != nil {
+				conn.send <- []byte(fmt.Sprintf("AUTH_ERROR:Failed to create process: %v", err))
+				return
+			}
+			conn.process = process
+			conn.send <- []byte("AUTH_SUCCESS")
+		} else {
+			conn.send <- []byte("AUTH_ERROR:Authentication failed")
+		}
+		
+	case "/ping":
+		conn.send <- []byte("PONG")
+		
+	default:
+		conn.send <- []byte(fmt.Sprintf("UNKNOWN_COMMAND:%s", cmd))
 	}
 }
 
