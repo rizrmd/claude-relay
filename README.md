@@ -1,128 +1,312 @@
-# Claude Relay - WebSocket Server
+# Claude Relay
 
-A Go-based WebSocket server that provides an isolated Claude Code CLI environment with portable Bun installation.
+A Go library for communicating with Claude CLI and a WebSocket server application that uses it.
 
-## Features
+## Library: Claude CLI Communication
 
-- **Isolated Claude Installation**: Uses a portable Bun installation and isolated Claude instance in the project directory
-- **Auto-Setup**: Automatically downloads and installs Bun and Claude on first run
-- **Authentication Handling**: Guides you through Claude authentication when needed
-- **Conversation Context**: Maintains conversation history using Claude's --print mode
-- **Undo/Restore**: Per-message undo functionality with restore capability
-- **Progress Indicators**: Shows thinking indicators while Claude processes requests
-- **Web UI**: Clean, modern web interface with 120-character width support
-- **Session Isolation**: Each connection gets its own temporary directory
-- **Automatic Cleanup**: Processes and directories cleaned up on disconnect
+The core library provides isolated Claude CLI management without any server components:
+
+```go
+import "github.com/rizrmd/claude-relay"
+```
+
+### Core Features
+
+- **Isolated Installation**: Manages portable Bun and Claude CLI installations
+- **Process Management**: Spawns and controls Claude CLI processes  
+- **Authentication**: Handles Claude CLI authentication (browser-based, not API keys)
+- **Conversation State**: Maintains conversation history using --print mode
+
+### Library API
+
+```go
+// Create Claude setup manager
+setup, err := clauderelay.NewClaudeSetup()
+
+// Install Claude CLI and dependencies
+err := setup.Setup()
+
+// Check authentication
+authenticated, err := setup.CheckAuthentication()
+
+// Run interactive authentication
+err := setup.RunClaudeLogin()
+
+// Create and manage Claude process
+process := clauderelay.NewClaudeProcess(config, setup)
+response, err := process.SendMessage(ctx, "Hello Claude")
+```
+
+### What the Library Does NOT Include
+
+- No WebSocket server
+- No HTTP endpoints
+- No web UI
+- No network protocols
+
+The library is purely for managing Claude CLI processes locally.
+
+## Application: WebSocket Server
+
+The repository includes a WebSocket server application built on top of the library:
+
+### Running the Server
+
+```bash
+# Build and run
+go build -o claude-relay ./cmd/claude-relay
+./claude-relay -port 8081
+
+# Or use go run
+go run ./cmd/claude-relay/main.go -port 8081
+```
+
+### Server Features
+
+- WebSocket endpoint at `/ws` for Claude communication
+- Web UI at `client.html`
+- Conversation management with undo/restore
+- Progress indicators during processing
+- Session isolation with temp directories
+
+### WebSocket Protocol
+
+**Client → Server:**
+- Plain text messages for Claude
+- `/undo-from:N` - Undo from message N
+- `/restore` - Restore undone messages
+
+**Server → Client:**
+- Claude responses as text
+- Progress indicators with emoji prefixes
+- `UNDO_SUCCESS:N` - Undo confirmation
+- `RESTORE_SUCCESS:[...]` - Restore with messages
+- Error messages with ❌ prefix
 
 ## Installation
 
+### Using as a Library
+
 ```bash
-go mod download
-go build -o claude-relay .
+go get github.com/rizrmd/claude-relay
 ```
 
-## First Time Setup
+```go
+package main
 
-On first run, the application will:
-1. Download and install portable Bun in `.bun/`
-2. Install Claude Code CLI locally
-3. Guide you through Claude authentication
+import (
+    "context"
+    "log"
+    "github.com/rizrmd/claude-relay"
+)
 
-Run the setup:
+func main() {
+    // Setup Claude CLI
+    setup, err := clauderelay.NewClaudeSetup()
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    // Install if needed
+    if !setup.IsInstalled() {
+        if err := setup.Setup(); err != nil {
+            log.Fatal(err)
+        }
+    }
+    
+    // Check authentication
+    if authenticated, _ := setup.CheckAuthentication(); !authenticated {
+        log.Println("Please authenticate:")
+        if err := setup.RunClaudeLogin(); err != nil {
+            log.Fatal(err)
+        }
+    }
+    
+    // Create process manager
+    config := &clauderelay.Config{
+        ClaudePath: setup.GetClaudePath(),
+    }
+    process := clauderelay.NewClaudeProcess(config, setup)
+    
+    // Send message
+    ctx := context.Background()
+    response, err := process.SendMessage(ctx, "Hello Claude")
+    if err != nil {
+        log.Fatal(err)
+    }
+    log.Println("Claude:", response)
+}
+```
+
+### Running the WebSocket Server
+
 ```bash
+# Clone repository
+git clone https://github.com/rizrmd/claude-relay
+cd claude-relay
+
+# Build server
+go build -o claude-relay ./cmd/claude-relay
+
+# First run (will install Claude CLI)
 ./claude-relay -port 8081
+
+# When prompted, type /login to authenticate
+# Then open client.html in browser or visit http://localhost:8081
 ```
-
-When Claude starts and shows the interactive prompt, type `/login` and follow the authentication instructions.
-
-## Usage
-
-After initial setup, simply run:
-```bash
-./claude-relay -port 8081
-```
-
-Then open `client.html` in your browser or navigate to http://localhost:8081
 
 ## Directory Structure
 
-After setup, the following directories will be created:
-- `.bun/` - Portable Bun installation
-- `.claude-home/` - Isolated Claude configuration and authentication
-- `claude-relay-*/` - Temporary directories for Claude workspace (created at runtime)
-
-## Architecture
-
-- **main.go**: Entry point, setup initialization, and HTTP server
-- **setup.go**: Handles Bun and Claude installation, authentication
-- **websocket.go**: WebSocket connection and message handling
-- **process.go**: Claude process management and conversation state
-- **config.go**: Configuration management
-- **client.html**: Modern web UI with undo/restore functionality
-
-## Features in Detail
-
-### Isolated Environment
-- No system-wide installation required
-- All dependencies contained in project directory
-- Separate Claude home directory for configuration
-- Uses custom HOME environment for Claude
-
-### Conversation Management
-- Maintains conversation history across messages
-- Uses Claude's --print mode with context injection
-- Automatic history pruning (keeps last 10 exchanges)
-
-### Undo/Restore System
-- Click the ↶ button on any message to undo from that point
-- Removes the selected message and all subsequent ones
-- Restore button appears after undo operations
-- Can restore the last undone conversation
-
-### Progress Indicators
-- "Claude is thinking..." initial indicator
-- Progressive status updates during processing
-- Visual pulse animation in the UI
-
-## Configuration
-
-Default port is 8080, customize with:
-```bash
-./claude-relay -port 3000
+```
+claude-relay/
+├── setup.go              # Claude CLI installation and auth
+├── process.go            # Claude process management
+├── process_v2.go         # Alternative process implementation
+├── config.go             # Configuration structures
+├── websocket.go          # WebSocket server (application)
+├── websocket_v2.go       # Alternative WebSocket implementation
+├── relay.go              # Server orchestration (application)
+├── cmd/
+│   └── claude-relay/
+│       └── main.go       # CLI application
+├── examples/
+│   ├── basic/            # Basic library usage
+│   ├── multiple/         # Multiple instances
+│   └── embedded/         # Embedding in HTTP server
+└── client.html           # Web UI for WebSocket server
 ```
 
-## WebSocket Protocol
+## Authentication
 
-### Client to Server
-- Plain text messages sent to Claude
-- `/undo-from:N` - Undo from message index N
-- `/restore` - Restore last undone conversation
+Claude CLI uses browser-based authentication, NOT API keys:
 
-### Server to Client
-- Claude responses as plain text
-- Progress indicators (with emoji prefixes)
-- `UNDO_SUCCESS:N` - Undo confirmation
-- `RESTORE_SUCCESS:[...]` - Restore with message array
-- Error messages prefixed with ❌
+1. User runs `/login` command in Claude CLI
+2. Browser opens for Anthropic account login  
+3. Token saved in `.claude-home/.config/claude/auth.json`
+
+### Interactive Authentication
+
+```go
+setup := clauderelay.NewClaudeSetup()
+err := setup.RunClaudeLogin()
+// User completes browser auth
+```
+
+### Pre-configured Authentication
+
+For headless environments, authenticate on a machine with browser access first:
+
+```bash
+# On development machine
+./claude-relay -port 8081
+# Complete /login process
+
+# Backup auth files
+tar -czf claude-auth.tar.gz .claude-home/.config/claude/
+```
+
+Then restore on production:
+
+```go
+setup := clauderelay.NewClaudeSetup()
+err := setup.CopyAuthFrom("/path/to/claude-auth/")
+```
+
+## Examples
+
+### Library Usage: Simple Claude CLI Communication
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "github.com/rizrmd/claude-relay"
+)
+
+func main() {
+    setup, _ := clauderelay.NewClaudeSetup()
+    
+    if !setup.IsInstalled() {
+        setup.Setup()
+    }
+    
+    config := &clauderelay.Config{
+        ClaudePath: setup.GetClaudePath(),
+    }
+    
+    process := clauderelay.NewClaudeProcess(config, setup)
+    ctx := context.Background()
+    
+    response, _ := process.SendMessage(ctx, "What is 2+2?")
+    fmt.Println("Claude:", response)
+}
+```
+
+### Server Usage: Multiple Isolated Instances
+
+```go
+package main
+
+import (
+    "log"
+    "github.com/rizrmd/claude-relay"
+)
+
+func main() {
+    // Each instance has isolated Claude installation
+    instances := []struct {
+        port string
+        dir  string
+    }{
+        {"8081", "./claude-1"},
+        {"8082", "./claude-2"},
+    }
+    
+    for _, inst := range instances {
+        relay, _ := clauderelay.New(clauderelay.Options{
+            Port:    inst.port,
+            BaseDir: inst.dir,
+        })
+        relay.Start()
+        defer relay.Close()
+        
+        log.Printf("Instance at ws://localhost:%s/ws", inst.port)
+    }
+    
+    select {} // Keep running
+}
+```
+
+## Development
+
+```bash
+# Run tests
+go test ./...
+
+# Build library
+go build
+
+# Build server application
+go build -o claude-relay ./cmd/claude-relay
+
+# Run examples
+go run examples/basic/main.go
+```
 
 ## Troubleshooting
 
-### Authentication Issues
+### Reset Authentication
 ```bash
 rm -rf .claude-home
 ./claude-relay -port 8081
-# Complete login when prompted
+# Complete /login when prompted
 ```
 
 ### Port Already in Use
 ```bash
 lsof -ti :8081 | xargs kill -9
-```
-
-### Reset Everything
-```bash
-rm -rf .bun .claude-home
-./claude-relay -port 8081
 ```
 
 ### Check Installation
@@ -131,41 +315,22 @@ ls -la .bun/bin/       # Should show bun and claude
 ls -la .claude-home/   # Should show .config/claude/
 ```
 
-## Development
-
-### Building
-```bash
-go build -o claude-relay .
-```
-
-### Testing
-```bash
-# Run server
-./claude-relay -port 8081
-
-# In another terminal
-python test_ws.py
-```
-
-### Helper Scripts
-- `setup.sh` - Interactive setup script
-- `test.sh` - Run tests
-- `Makefile` - Build and run commands
-
 ## Security Notes
 
-- Each session isolated in temporary directory
-- Processes killed and cleaned up on disconnect
-- Authentication stored in isolated `.claude-home`
-- CORS configured to accept any origin (customize as needed)
-- Uses `--dangerously-skip-permissions` flag for Claude
+- Authentication tokens stored in `.claude-home/.config/claude/auth.json`
+- Each instance isolated in its own directory
+- Never commit auth.json to version control
+- WebSocket server accepts connections from any origin (customize as needed)
 
 ## Requirements
 
 - Go 1.19 or higher
-- Internet connection for initial setup
+- Internet connection for initial Claude CLI setup
 - macOS or Linux (Windows not tested)
+- Browser access for initial authentication
 
 ## License
 
-MIT
+MIT License - see [LICENSE](LICENSE) file
+
+Copyright (c) 2024 rizrmd
