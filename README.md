@@ -161,10 +161,8 @@ go build -o claude-relay ./cmd/claude-relay
 claude-relay/
 ├── setup.go              # Claude CLI installation and auth
 ├── process.go            # Claude process management
-├── process_v2.go         # Alternative process implementation
 ├── config.go             # Configuration structures
 ├── websocket.go          # WebSocket server (application)
-├── websocket_v2.go       # Alternative WebSocket implementation
 ├── relay.go              # Server orchestration (application)
 ├── cmd/
 │   └── claude-relay/
