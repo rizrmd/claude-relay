@@ -363,16 +363,42 @@ func (cs *ClaudeSetup) HandleAuthenticationPrompt(process *ClaudeProcess) error 
 	return nil
 }
 
-// GetAuthURL returns the Claude authentication URL for non-interactive login
-func (cs *ClaudeSetup) GetAuthURL() (string, error) {
-	// The Claude CLI uses this URL pattern for authentication
-	return "https://console.anthropic.com/settings/keys", nil
+// CopyAuthFrom copies authentication config from another directory
+func (cs *ClaudeSetup) CopyAuthFrom(sourceDir string) error {
+	sourceAuthFile := filepath.Join(sourceDir, "auth.json")
+	
+	// Check if source auth file exists
+	if _, err := os.Stat(sourceAuthFile); os.IsNotExist(err) {
+		return fmt.Errorf("no auth.json found in %s", sourceDir)
+	}
+	
+	// Read the source auth file
+	authData, err := os.ReadFile(sourceAuthFile)
+	if err != nil {
+		return fmt.Errorf("failed to read auth file: %w", err)
+	}
+	
+	// Ensure our config directory exists
+	configDir := filepath.Join(cs.claudeHome, ".config", "claude")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+	
+	// Write to our auth file
+	destAuthFile := filepath.Join(configDir, "auth.json")
+	if err := os.WriteFile(destAuthFile, authData, 0600); err != nil {
+		return fmt.Errorf("failed to write auth file: %w", err)
+	}
+	
+	log.Printf("Authentication copied from %s", sourceDir)
+	return nil
 }
 
-// SetAuthToken sets the authentication token programmatically
-func (cs *ClaudeSetup) SetAuthToken(apiKey string) error {
-	if apiKey == "" {
-		return fmt.Errorf("API key cannot be empty")
+// SetAuthToken sets the Claude Code CLI authentication token programmatically
+// Note: This is NOT a Claude API key, but rather the auth token from Claude Code CLI login
+func (cs *ClaudeSetup) SetAuthToken(authToken string) error {
+	if authToken == "" {
+		return fmt.Errorf("auth token cannot be empty")
 	}
 	
 	// Ensure the config directory exists
@@ -381,9 +407,10 @@ func (cs *ClaudeSetup) SetAuthToken(apiKey string) error {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 	
-	// Create the auth.json file with the API key
+	// Create the auth.json file with the auth token
+	// This mimics what Claude Code CLI saves after login
 	authFile := filepath.Join(configDir, "auth.json")
-	authData := fmt.Sprintf(`{"key":"%s"}`, apiKey)
+	authData := fmt.Sprintf(`{"key":"%s"}`, authToken)
 	
 	if err := os.WriteFile(authFile, []byte(authData), 0600); err != nil {
 		return fmt.Errorf("failed to write auth file: %w", err)
@@ -393,18 +420,6 @@ func (cs *ClaudeSetup) SetAuthToken(apiKey string) error {
 	return nil
 }
 
-// StartNonInteractiveAuth initiates non-interactive authentication
-// It returns the auth URL and a channel that will receive the result
-func (cs *ClaudeSetup) StartNonInteractiveAuth() (string, chan error) {
-	resultChan := make(chan error, 1)
-	
-	// Get the auth URL
-	authURL, _ := cs.GetAuthURL()
-	
-	// Return the URL and channel immediately
-	// The caller will provide the token via SetAuthToken
-	return authURL, resultChan
-}
 
 // WaitForAuth waits for authentication to be completed
 // This can be used after SetAuthToken to verify authentication worked

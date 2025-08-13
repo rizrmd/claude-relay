@@ -1,301 +1,295 @@
 # Claude Relay - Authentication Guide
 
-## Overview
+## Important: No API Keys!
 
-The Claude Relay library provides flexible authentication options to work in any environment - from interactive terminals to serverless functions.
+**This library uses Claude Code CLI authentication, NOT Claude API keys.**
+
+Claude Code CLI uses browser-based authentication through your Anthropic account. There are no API keys like `sk-ant-...` involved.
+
+## How Claude Code CLI Authentication Works
+
+1. User runs Claude Code CLI
+2. Types `/login` command
+3. Browser opens for Anthropic account login
+4. CLI saves authentication token locally
+5. Token stored in `.config/claude/auth.json`
 
 ## Authentication Methods
 
-### 1. **SetAuthToken()** - Programmatic Authentication
+### 1. Interactive Authentication (Development)
 
-**When to use:** Servers, containers, CI/CD, serverless, any headless environment
-
-```go
-// Direct method call
-apiKey := os.Getenv("CLAUDE_API_KEY")
-relay.SetAuthToken(apiKey)
-
-// Or during initialization
-relay, _ := clauderelay.New(clauderelay.Options{
-    APIKey: os.Getenv("CLAUDE_API_KEY"),
-})
-```
-
-**Characteristics:**
-- ✅ No user interaction required
-- ✅ Works without terminal
-- ✅ Suitable for automation
-- ✅ Can be changed at runtime
-
-### 2. **Authenticate()** - Interactive Authentication  
-
-**When to use:** CLI tools, local development, when user has terminal access
-
-```go
-if !relay.IsAuthenticated() {
-    relay.Authenticate() // Launches Claude's interactive login
-}
-```
-
-**User experience:**
-1. Claude interface appears in terminal
-2. User selects theme (press 1 for dark mode)
-3. User types `/login`
-4. Browser opens for authentication
-5. Token is saved automatically
-
-**Characteristics:**
-- ❌ Requires terminal/TTY
-- ❌ Needs user interaction
-- ✅ User manages own credentials
-- ✅ Familiar Claude experience
-
-### 3. **AuthCallback** - Custom Authentication Flow
-
-**When to use:** Web apps, mobile apps, custom UIs
+For local development with terminal and browser access:
 
 ```go
 relay, _ := clauderelay.New(clauderelay.Options{
-    AuthCallback: func(authURL string) (string, error) {
-        // Your custom logic to get API key
-        // - Show authURL in your UI
-        // - Wait for user input
-        // - Query database
-        // - Call another service
-        return apiKey, nil
-    },
+    Port:    "8081",
+    BaseDir: "./claude",
 })
-```
 
-**Example - Web Application:**
-```go
-AuthCallback: func(authURL string) (string, error) {
-    // Send URL to frontend
-    websocket.Send(map[string]string{
-        "type": "auth_required",
-        "url": authURL,
-    })
-    
-    // Wait for API key from frontend
-    select {
-    case apiKey := <-apiKeyChan:
-        return apiKey, nil
-    case <-time.After(5 * time.Minute):
-        return "", fmt.Errorf("authentication timeout")
-    }
+// Check if authenticated
+if authenticated, _ := relay.IsAuthenticated(); !authenticated {
+    // Run interactive login
+    relay.Authenticate()
+    // User will:
+    // 1. See Claude interface
+    // 2. Choose theme (press 1)
+    // 3. Type /login
+    // 4. Complete browser auth
 }
 ```
 
-## Checking Authentication Status
+### 2. Pre-configured Authentication (Production)
 
-### Simple Check
-```go
-authenticated, err := relay.IsAuthenticated()
-if !authenticated {
-    // Handle authentication
-}
+For servers, Docker, CI/CD without browser access:
+
+#### Step 1: Authenticate on Development Machine
+
+```bash
+# Run the relay locally
+./claude-relay -port 8081
+
+# Complete the authentication process
+# Files will be saved in .claude-home/.config/claude/
 ```
 
-### Detailed Status
-```go
-authenticated, message, err := relay.GetAuthStatus()
-// Returns one of:
-// - (true, "Authenticated", nil)
-// - (false, "No authentication file found", nil)  
-// - (false, "Authentication file is empty", nil)
-// - (false, "Authentication file appears invalid", nil)
+#### Step 2: Backup Authentication Files
+
+```bash
+# Copy the auth directory
+cp -r .claude-home/.config/claude/ /backup/claude-auth/
+
+# Or tar it for transfer
+tar -czf claude-auth.tar.gz .claude-home/.config/claude/
 ```
 
-### Get Auth URL
-```go
-url, _ := relay.GetAuthURL()
-// Returns: "https://console.anthropic.com/settings/keys"
-```
+#### Step 3: Use in Production
 
-## Use Case Examples
-
-### Docker Container
-```go
-func main() {
-    relay, err := clauderelay.New(clauderelay.Options{
-        Port:   "8081",
-        APIKey: os.Getenv("CLAUDE_API_KEY"), // From env or secret
-    })
-    if err != nil {
-        log.Fatal(err)
-    }
-    
-    // Already authenticated via APIKey option
-    relay.Start()
-}
-```
-
-### Kubernetes with Secrets
-```go
-// Read from mounted secret
-apiKey, _ := os.ReadFile("/var/run/secrets/claude/api-key")
-
-relay, _ := clauderelay.New(clauderelay.Options{
-    Port: "8081",
-})
-relay.SetAuthToken(string(apiKey))
-```
-
-### AWS Lambda
-```go
-func handler(ctx context.Context) error {
-    // Get from AWS Secrets Manager or Parameter Store
-    apiKey := getSecretValue("claude-api-key")
-    
-    relay, _ := clauderelay.New(clauderelay.Options{
-        APIKey: apiKey,
-    })
-    
-    return relay.Start()
-}
-```
-
-### Web Service with UI
-```go
-// See examples/webservice/main.go for full implementation
-http.HandleFunc("/api/auth/set-key", func(w http.ResponseWriter, r *http.Request) {
-    var req struct {
-        APIKey string `json:"api_key"`
-    }
-    json.NewDecoder(r.Body).Decode(&req)
-    
-    err := relay.SetAuthToken(req.APIKey)
-    if err != nil {
-        http.Error(w, err.Error(), 500)
-        return
-    }
-    
-    fmt.Fprintf(w, `{"success": true}`)
-})
-```
-
-### CLI Tool with Fallback
 ```go
 relay, _ := clauderelay.New(clauderelay.Options{
-    APIKey: os.Getenv("CLAUDE_API_KEY"), // Try env first
+    Port:             "8081",
+    BaseDir:          "./claude",
+    PreAuthDirectory: "/backup/claude-auth/", // Point to backed up auth
 })
-
-// If no env var, check if authenticated
-if !relay.IsAuthenticated() {
-    fmt.Println("No API key found. Starting interactive login...")
-    relay.Authenticate() // Fall back to interactive
-}
 ```
 
-## Authentication Storage
+## Docker Deployment
 
-Each relay instance stores authentication in:
+### Creating Docker Image with Auth
+
+```dockerfile
+FROM alpine:latest
+
+# Copy pre-authenticated config into image
+COPY ./claude-auth /auth/claude
+
+# Set environment
+ENV CLAUDE_AUTH_DIR=/auth/claude
+
+CMD ["./claude-relay"]
 ```
-BaseDir/
-└── .claude-home/
-    └── .config/
-        └── claude/
-            └── auth.json
+
+### Using Volume Mount
+
+```bash
+# Run with auth mounted as volume
+docker run -v /local/claude-auth:/auth/claude \
+    -e CLAUDE_AUTH_DIR=/auth/claude \
+    -p 8081:8081 \
+    your-image
 ```
 
-**File format:**
-```json
-{"key":"sk-ant-api..."}
+## Kubernetes Deployment
+
+### Using ConfigMap
+
+```yaml
+# First, create configmap from auth files
+kubectl create configmap claude-auth \
+    --from-file=auth.json=.claude-home/.config/claude/auth.json
+
+# Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: claude-relay
+spec:
+  template:
+    spec:
+      containers:
+      - name: claude-relay
+        image: your-image
+        env:
+        - name: CLAUDE_AUTH_DIR
+          value: /auth/claude
+        volumeMounts:
+        - name: auth
+          mountPath: /auth/claude
+      volumes:
+      - name: auth
+        configMap:
+          name: claude-auth
 ```
 
-## Security Best Practices
+### Using Secrets (Recommended)
 
-### 1. Never hardcode API keys
+```bash
+# Create secret
+kubectl create secret generic claude-auth \
+    --from-file=auth.json=.claude-home/.config/claude/auth.json
+
+# Use in deployment (similar to ConfigMap but with secret volume)
+```
+
+## CI/CD Pipeline
+
+### GitHub Actions
+
+```yaml
+- name: Setup Claude Auth
+  run: |
+    mkdir -p .claude-home/.config/claude
+    echo "${{ secrets.CLAUDE_AUTH_JSON }}" > .claude-home/.config/claude/auth.json
+
+- name: Run with Claude
+  run: |
+    ./claude-relay -port 8081
+```
+
+### GitLab CI
+
+```yaml
+before_script:
+  - mkdir -p .claude-home/.config/claude
+  - echo "$CLAUDE_AUTH_JSON" > .claude-home/.config/claude/auth.json
+```
+
+## Authentication File Structure
+
+The authentication is stored in a simple JSON file:
+
+```
+.claude-home/
+└── .config/
+    └── claude/
+        └── auth.json  # Contains session token (NOT an API key)
+```
+
+## Checking Authentication
+
 ```go
-// ❌ Bad
-APIKey: "sk-ant-api03-..."
+// Simple check
+authenticated, _ := relay.IsAuthenticated()
 
-// ✅ Good  
-APIKey: os.Getenv("CLAUDE_API_KEY")
-```
-
-### 2. Use appropriate secret storage
-- **Development**: Environment variables
-- **Docker**: Build args or runtime secrets
-- **Kubernetes**: Secret objects
-- **Cloud**: AWS Secrets Manager, Azure Key Vault, GCP Secret Manager
-
-### 3. Rotate keys regularly
-```go
-// Support key rotation without restart
-go func() {
-    for newKey := range keyRotationChannel {
-        relay.SetAuthToken(newKey)
-        log.Println("API key rotated")
-    }
-}()
-```
-
-### 4. Validate authentication
-```go
-relay.SetAuthToken(apiKey)
-
-// Always verify it worked
+// Detailed status
 authenticated, message, _ := relay.GetAuthStatus()
-if !authenticated {
-    log.Fatalf("Authentication failed: %s", message)
-}
+// Possible messages:
+// - "Authenticated"
+// - "No authentication file found"
+// - "Authentication file is empty"
+// - "Authentication file appears invalid"
+
+// Get auth config path
+path := relay.GetAuthConfigPath()
+// Use this to backup auth files
 ```
 
-## Comparison Table
+## Transferring Authentication
 
-| Feature | SetAuthToken | Authenticate | AuthCallback |
-|---------|--------------|--------------|--------------|
-| No Terminal Needed | ✅ | ❌ | ✅ |
-| No User Interaction | ✅ | ❌ | Depends |
-| Works in Containers | ✅ | ❌ | ✅ |
-| Works in Serverless | ✅ | ❌ | ✅ |
-| Custom UI Possible | ❌ | ❌ | ✅ |
-| User Manages Auth | ❌ | ✅ | Depends |
+### Manual Process
+
+1. **On Machine A (with browser):**
+```bash
+# Authenticate
+./claude-relay -port 8081
+# Complete /login process
+
+# Find auth files
+ls -la .claude-home/.config/claude/
+
+# Create backup
+tar -czf claude-auth-backup.tar.gz .claude-home/.config/claude/
+```
+
+2. **On Machine B (production):**
+```bash
+# Extract backup
+tar -xzf claude-auth-backup.tar.gz
+
+# Use in code
+relay.CopyAuthFrom(".claude-home/.config/claude/")
+```
+
+### Programmatic Transfer
+
+```go
+// On authenticated machine
+sourceRelay, _ := clauderelay.New(clauderelay.Options{
+    BaseDir: "./authenticated-instance",
+})
+authPath := sourceRelay.GetAuthConfigPath()
+
+// Copy files from authPath to your deployment
+
+// On production machine
+prodRelay, _ := clauderelay.New(clauderelay.Options{
+    BaseDir: "./production-instance",
+})
+prodRelay.CopyAuthFrom("/path/to/copied/auth")
+```
+
+## Security Considerations
+
+1. **Protect Auth Files**: The `auth.json` file contains session tokens. Treat it like a password.
+
+2. **Use Secrets Management**: In production, use proper secrets management:
+   - Kubernetes Secrets
+   - Docker Secrets
+   - AWS Secrets Manager
+   - HashiCorp Vault
+
+3. **Limit Access**: Set file permissions to 0600 for auth files.
+
+4. **Rotate Regularly**: Re-authenticate periodically for security.
+
+5. **Don't Commit**: Never commit auth.json to version control. Add to .gitignore:
+   ```
+   .claude-home/
+   **/auth.json
+   ```
 
 ## Troubleshooting
 
 ### "Claude is not authenticated"
-- Check if API key is set correctly
-- Verify auth file exists: `BaseDir/.claude-home/.config/claude/auth.json`
-- Check file permissions (should be 0600)
+- No auth.json file exists
+- Run `relay.Authenticate()` on a machine with browser access
 
-### "Invalid API key"
-- Ensure key starts with `sk-ant-`
-- Check for extra whitespace
-- Verify key hasn't been revoked
+### "Authentication file appears invalid"
+- The auth.json file is corrupted or incomplete
+- Re-authenticate with `relay.Authenticate()`
 
-### Authentication not persisting
-- Check BaseDir is writable
-- Ensure each instance uses unique BaseDir
-- Verify no permission issues
+### Authentication works locally but not in Docker
+- Check if auth files are properly copied/mounted
+- Verify CLAUDE_AUTH_DIR environment variable
+- Check file permissions in container
 
-## Migration Guide
+### Can't complete /login in headless environment
+- You cannot authenticate in headless environments
+- Must authenticate on a machine with browser access first
+- Then copy auth files to headless environment
 
-### From Interactive to Non-Interactive
+## FAQ
 
-**Before (Terminal Required):**
-```go
-relay.Authenticate() // User must interact
-```
+**Q: Can I use Claude API keys?**
+A: No. This library uses Claude Code CLI, which has its own auth system.
 
-**After (No Terminal Needed):**
-```go
-relay.SetAuthToken(os.Getenv("CLAUDE_API_KEY"))
-```
+**Q: How long does authentication last?**
+A: Sessions typically last several weeks but may expire. Re-authenticate when needed.
 
-### From Hardcoded to Dynamic
+**Q: Can I authenticate programmatically without a browser?**
+A: No. Initial authentication requires browser access. After that, you can copy auth files.
 
-**Before:**
-```go
-// Hardcoded at initialization
-relay, _ := clauderelay.New(clauderelay.Options{
-    APIKey: "sk-ant-...",
-})
-```
+**Q: Is the auth token the same as an API key?**
+A: No. It's a session token specific to Claude Code CLI.
 
-**After:**
-```go
-// Can be set/changed anytime
-relay, _ := clauderelay.New(clauderelay.Options{})
-relay.SetAuthToken(getAPIKeyFromSource())
+**Q: Can multiple instances share the same auth?**
+A: Yes, you can copy auth files to multiple instances.

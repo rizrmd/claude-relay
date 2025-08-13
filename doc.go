@@ -117,55 +117,61 @@
 //
 // ## Authentication Methods
 //
-// ### 1. SetAuthToken() - Non-Interactive/Programmatic
+// Claude Code CLI uses browser-based authentication, NOT API keys.
 //
-// Use when you already have an API key. Perfect for servers, containers, and headless environments.
+// ### 1. Authenticate() - Interactive/Terminal-Based
 //
-//	apiKey := os.Getenv("CLAUDE_API_KEY")
-//	err := relay.SetAuthToken(apiKey)
-//
-// ### 2. Authenticate() - Interactive/Terminal-Based
-//
-// Use when running in a terminal with user interaction. Launches Claude's interactive login.
+// Standard authentication flow - requires terminal and browser access.
 //
 //	err := relay.Authenticate()
-//	// User will see Claude interface, choose theme, type /login
+//	// User will:
+//	// 1. See Claude interface in terminal
+//	// 2. Choose a theme (press 1 for dark)
+//	// 3. Type /login
+//	// 4. Complete browser authentication
 //
-// ### 3. Options.APIKey - Automatic Authentication
+// ### 2. CopyAuthFrom() - Reuse Existing Authentication
 //
-// Provide API key during initialization for automatic setup.
+// Copy authentication from another machine or backup.
+//
+//	// First, authenticate on a machine with browser access
+//	// Then copy .claude-home/.config/claude/ directory
+//	err := relay.CopyAuthFrom("/path/to/claude/config")
+//
+// ### 3. Options.PreAuthDirectory - Pre-authenticated Setup
+//
+// Provide pre-authenticated config during initialization.
 //
 //	relay, _ := clauderelay.New(clauderelay.Options{
-//		APIKey: "sk-ant-...",  // Automatically authenticates
-//	})
-//
-// ### 4. Options.AuthCallback - Custom Authentication Flow
-//
-// Implement your own authentication UI/flow.
-//
-//	relay, _ := clauderelay.New(clauderelay.Options{
-//		AuthCallback: func(authURL string) (string, error) {
-//			// Show authURL to user in your UI
-//			// Return API key from your source
-//			return getUserAPIKey(authURL), nil
-//		},
+//		PreAuthDirectory: "/backup/claude-auth",
 //	})
 //
 // ## When to Use Each Method
 //
-// SetAuthToken() - Use when:
-// • Running as a web service or API
-// • Deploying in Docker containers
-// • Running in CI/CD pipelines
-// • Serverless functions (AWS Lambda, etc.)
-// • Background jobs or workers
-// • Any environment without terminal access
-//
 // Authenticate() - Use when:
-// • Building CLI tools
 // • Local development with terminal
-// • One-time setup scripts
-// • User manages their own authentication
+// • Initial setup with browser access
+// • One-time authentication
+//
+// CopyAuthFrom() - Use when:
+// • Deploying to servers without browser
+// • Docker containers
+// • CI/CD pipelines
+// • Reusing auth across instances
+//
+// ## Authentication in Production
+//
+// For production deployments without browser access:
+//
+// 1. Authenticate once on a development machine:
+//
+//	relay.Authenticate() // Interactive login
+//	authPath := relay.GetAuthConfigPath()
+//	// Save the files in authPath
+//
+// 2. Copy auth files to production:
+//
+//	relay.CopyAuthFrom("/deployed/auth/backup")
 //
 // ## Checking Authentication Status
 //
@@ -175,13 +181,6 @@
 //	// Detailed status
 //	authenticated, message, err := relay.GetAuthStatus()
 //	// Returns: (true, "Authenticated", nil) or (false, "No authentication file found", nil)
-//
-// ## Getting the Auth URL
-//
-// For custom authentication flows:
-//
-//	url, _ := relay.GetAuthURL()
-//	// Returns: "https://console.anthropic.com/settings/keys"
 //
 // # Thread Safety
 //

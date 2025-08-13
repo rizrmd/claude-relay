@@ -61,14 +61,14 @@ type Options struct {
 	// If empty, uses the isolated installation.
 	CustomClaudePath string
 
-	// APIKey provides the Claude API key for non-interactive authentication.
-	// If provided, the library will automatically authenticate without user interaction.
-	APIKey string
+	// AuthToken provides a pre-existing Claude Code CLI auth token for reuse.
+	// This is obtained from a previous Claude Code CLI login session.
+	// Note: This is NOT a Claude API key.
+	AuthToken string
 
-	// AuthCallback is called when authentication is needed.
-	// If provided, this will be used instead of interactive authentication.
-	// The callback receives the auth URL and should return the API key.
-	AuthCallback func(authURL string) (string, error)
+	// PreAuthDirectory specifies a directory containing pre-authenticated Claude config.
+	// Copy from another machine's .claude-home/.config/claude/ directory.
+	PreAuthDirectory string
 }
 
 // Relay represents a Claude WebSocket relay server instance.
@@ -136,27 +136,22 @@ func New(opts Options) (*Relay, error) {
 		
 		if !authenticated {
 			// Try to authenticate using provided options
-			if opts.APIKey != "" {
+			if opts.AuthToken != "" {
 				if opts.EnableLogging {
-					log.Printf("Setting up authentication with provided API key")
+					log.Printf("Setting up authentication with provided auth token")
 				}
-				if err := setup.SetAuthToken(opts.APIKey); err != nil {
-					return nil, fmt.Errorf("failed to set API key: %w", err)
+				if err := setup.SetAuthToken(opts.AuthToken); err != nil {
+					return nil, fmt.Errorf("failed to set auth token: %w", err)
 				}
-			} else if opts.AuthCallback != nil {
+			} else if opts.PreAuthDirectory != "" {
 				if opts.EnableLogging {
-					log.Printf("Using auth callback for authentication")
+					log.Printf("Copying pre-authenticated config from %s", opts.PreAuthDirectory)
 				}
-				authURL, _ := setup.GetAuthURL()
-				apiKey, err := opts.AuthCallback(authURL)
-				if err != nil {
-					return nil, fmt.Errorf("auth callback failed: %w", err)
-				}
-				if err := setup.SetAuthToken(apiKey); err != nil {
-					return nil, fmt.Errorf("failed to set API key from callback: %w", err)
+				if err := setup.CopyAuthFrom(opts.PreAuthDirectory); err != nil {
+					return nil, fmt.Errorf("failed to copy auth config: %w", err)
 				}
 			} else if opts.EnableLogging {
-				log.Printf("Warning: Claude is not authenticated. Use SetAuthToken() or Authenticate() to login")
+				log.Printf("Warning: Claude Code CLI is not authenticated. Use Authenticate() to login interactively")
 			}
 		}
 	}
@@ -328,74 +323,41 @@ func (r *Relay) Authenticate() error {
 	return r.setup.RunClaudeLogin()
 }
 
-// GetAuthURL returns the URL where users can get their API key.
-// Use this for non-interactive authentication flows.
+// GetAuthConfigPath returns the path where Claude Code CLI stores authentication.
+// This can be used to backup or transfer authentication between machines.
 //
 // Example:
 //
-//	url, _ := relay.GetAuthURL()
-//	fmt.Printf("Get your API key at: %s\n", url)
-//	// ... show URL to user ...
-//	relay.SetAuthToken(apiKey)
-func (r *Relay) GetAuthURL() (string, error) {
-	return r.setup.GetAuthURL()
+//	path := relay.GetAuthConfigPath()
+//	// Returns: "/path/to/.claude-home/.config/claude"
+func (r *Relay) GetAuthConfigPath() string {
+	return filepath.Join(r.setup.GetClaudeHome(), ".config", "claude")
 }
 
-// SetAuthToken sets the API key for non-interactive authentication.
-// This method allows programmatic authentication without terminal access.
+// CopyAuthFrom copies authentication from another Claude installation.
+// Use this to reuse authentication from another machine or instance.
 //
 // Example:
 //
-//	// Get API key from environment, database, or user input
-//	apiKey := os.Getenv("CLAUDE_API_KEY")
-//	if err := relay.SetAuthToken(apiKey); err != nil {
+//	// Copy auth from another instance
+//	err := relay.CopyAuthFrom("/backup/claude-auth/")
+func (r *Relay) CopyAuthFrom(sourceDir string) error {
+	return r.setup.CopyAuthFrom(sourceDir)
+}
+
+// SetAuthToken sets a pre-existing Claude Code CLI auth token.
+// Note: This is NOT a Claude API key, but the token from Claude Code CLI login.
+// This method is mainly for advanced use cases where you have the raw token.
+//
+// Example:
+//
+//	// If you somehow have the auth token from Claude Code CLI
+//	token := getClaudeAuthToken() // from previous session
+//	if err := relay.SetAuthToken(token); err != nil {
 //		log.Fatal(err)
 //	}
-func (r *Relay) SetAuthToken(apiKey string) error {
-	return r.setup.SetAuthToken(apiKey)
-}
-
-// AuthenticateWithCallback performs non-interactive authentication using a callback.
-// The callback receives the auth URL and should return the API key.
-//
-// Example:
-//
-//	err := relay.AuthenticateWithCallback(func(authURL string) (string, error) {
-//		fmt.Printf("Please visit: %s\n", authURL)
-//		fmt.Print("Enter your API key: ")
-//		var apiKey string
-//		fmt.Scanln(&apiKey)
-//		return apiKey, nil
-//	})
-func (r *Relay) AuthenticateWithCallback(callback func(authURL string) (string, error)) error {
-	// Get the auth URL
-	authURL, err := r.GetAuthURL()
-	if err != nil {
-		return fmt.Errorf("failed to get auth URL: %w", err)
-	}
-	
-	// Call the callback to get the API key
-	apiKey, err := callback(authURL)
-	if err != nil {
-		return fmt.Errorf("callback failed: %w", err)
-	}
-	
-	// Set the auth token
-	if err := r.SetAuthToken(apiKey); err != nil {
-		return fmt.Errorf("failed to set auth token: %w", err)
-	}
-	
-	// Verify authentication worked
-	authenticated, status, err := r.GetAuthStatus()
-	if err != nil {
-		return fmt.Errorf("failed to verify authentication: %w", err)
-	}
-	
-	if !authenticated {
-		return fmt.Errorf("authentication failed: %s", status)
-	}
-	
-	return nil
+func (r *Relay) SetAuthToken(authToken string) error {
+	return r.setup.SetAuthToken(authToken)
 }
 
 // Setup installs Claude and Bun if not already installed.
