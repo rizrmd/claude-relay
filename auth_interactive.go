@@ -16,22 +16,88 @@ import (
 func (cs *ClaudeSetup) GetAuthenticationURL() (string, error) {
 	log.Println("Getting authentication URL from Claude CLI...")
 	
-	// Try to run Claude with a special command to get auth info
-	cmd := exec.Command(cs.claudePath, "--version")
+	// Create a command that will output the login URL
+	// We send /login command via stdin and capture the output
+	cmd := exec.Command(cs.claudePath, "--no-interactive")
 	cmd.Env = cs.GetClaudeEnv()
 	
-	var stdout bytes.Buffer
-	cmd.Stdout = &stdout
-	
-	// First verify Claude is working
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("failed to run Claude CLI: %w", err)
+	// Prepare input
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return "", fmt.Errorf("failed to create stdin pipe: %w", err)
 	}
 	
-	// For Claude Code CLI, the auth URL is always the Anthropic console
-	// In a real implementation, we might extract this from Claude's output
-	authURL := "https://console.anthropic.com/login?client=claude-code"
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 	
+	// Start the command
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("failed to start Claude CLI: %w", err)
+	}
+	
+	// Send /login command
+	go func() {
+		defer stdin.Close()
+		fmt.Fprintln(stdin, "/login")
+		time.Sleep(500 * time.Millisecond)
+	}()
+	
+	// Wait for output with timeout
+	done := make(chan error)
+	go func() {
+		done <- cmd.Wait()
+	}()
+	
+	select {
+	case <-done:
+		// Command finished
+	case <-time.After(2 * time.Second):
+		// Kill if taking too long
+		cmd.Process.Kill()
+	}
+	
+	// Parse the output for the authentication URL
+	output := stdout.String() + stderr.String()
+	
+	// Look for the authentication URL in the output
+	authURL := extractURL(output)
+	
+	// If we couldn't find the URL in output, try running with --help to find login info
+	if authURL == "" {
+		// Try another approach - run with print mode
+		cmd2 := exec.Command(cs.claudePath, "--print")
+		cmd2.Env = cs.GetClaudeEnv()
+		
+		stdin2, _ := cmd2.StdinPipe()
+		var out2 bytes.Buffer
+		cmd2.Stdout = &out2
+		cmd2.Stderr = &out2
+		
+		if err := cmd2.Start(); err == nil {
+			go func() {
+				defer stdin2.Close()
+				fmt.Fprintln(stdin2, "/login")
+			}()
+			
+			// Wait briefly
+			time.Sleep(1 * time.Second)
+			cmd2.Process.Kill()
+			
+			output2 := out2.String()
+			if url := extractURL(output2); url != "" {
+				authURL = url
+			}
+		}
+	}
+	
+	// If still no URL found, use the default
+	if authURL == "" {
+		log.Println("Could not extract URL from Claude CLI, using default")
+		authURL = "https://console.anthropic.com/login"
+	}
+	
+	log.Printf("Authentication URL: %s", authURL)
 	return authURL, nil
 }
 
@@ -42,10 +108,16 @@ func (cs *ClaudeSetup) StartNonInteractiveAuth() (authURL string, sessionID stri
 	// Generate a unique session ID for this auth attempt
 	sessionID = fmt.Sprintf("claude-auth-%d", time.Now().Unix())
 	
-	// Get the authentication URL
-	authURL, err = cs.GetAuthenticationURL()
-	if err != nil {
-		return "", "", err
+	// First try to get URL by actually running the login command
+	authURL = cs.extractLoginURLFromCLI()
+	
+	// If that didn't work, try the other method
+	if authURL == "" {
+		authURL, err = cs.GetAuthenticationURL()
+		if err != nil {
+			// Use default as fallback
+			authURL = "https://console.anthropic.com/login"
+		}
 	}
 	
 	log.Printf("Authentication URL: %s", authURL)
@@ -54,29 +126,70 @@ func (cs *ClaudeSetup) StartNonInteractiveAuth() (authURL string, sessionID stri
 	return authURL, sessionID, nil
 }
 
+// extractLoginURLFromCLI runs Claude CLI login command and extracts the URL
+func (cs *ClaudeSetup) extractLoginURLFromCLI() string {
+	// Run Claude with echo to simulate /login command
+	cmd := exec.Command("sh", "-c", fmt.Sprintf("echo '/login' | %s", cs.claudePath))
+	cmd.Env = cs.GetClaudeEnv()
+	
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+	
+	// Run with timeout
+	done := make(chan error)
+	go func() {
+		done <- cmd.Run()
+	}()
+	
+	select {
+	case <-done:
+		// Command finished
+	case <-time.After(3 * time.Second):
+		// Kill if taking too long
+		if cmd.Process != nil {
+			cmd.Process.Kill()
+		}
+	}
+	
+	// Extract URL from output
+	return extractURL(output.String())
+}
+
 // extractURL extracts a URL from text
 func extractURL(text string) string {
-	// Pattern to match URLs
-	urlPattern := regexp.MustCompile(`https://[^\s\]]+`)
+	// Pattern to match URLs - more comprehensive
+	urlPattern := regexp.MustCompile(`https?://[^\s\]\)\>]+`)
 	matches := urlPattern.FindAllString(text, -1)
 	
 	for _, match := range matches {
 		// Clean up the URL
 		url := strings.TrimSpace(match)
-		url = strings.TrimSuffix(url, ".")
-		url = strings.TrimSuffix(url, ",")
-		url = strings.TrimSuffix(url, ")")
-		url = strings.TrimSuffix(url, "]")
+		// Remove common trailing punctuation
+		for _, suffix := range []string{".", ",", ")", "]", "}", ">", "\"", "'"} {
+			url = strings.TrimSuffix(url, suffix)
+		}
 		
-		// Prefer URLs with console.anthropic.com
-		if strings.Contains(url, "console.anthropic.com") {
+		// Prefer URLs with console.anthropic.com or claude.ai
+		if strings.Contains(url, "console.anthropic.com") || strings.Contains(url, "claude.ai") {
 			return url
 		}
 	}
 	
+	// Look for URLs in markdown link format [text](url)
+	mdLinkPattern := regexp.MustCompile(`\[.*?\]\((https?://[^\)]+)\)`)
+	if mdMatches := mdLinkPattern.FindStringSubmatch(text); len(mdMatches) > 1 {
+		return mdMatches[1]
+	}
+	
 	// Return first URL if no Anthropic URL found
 	if len(matches) > 0 {
-		return matches[0]
+		url := matches[0]
+		// Clean up the URL
+		for _, suffix := range []string{".", ",", ")", "]", "}", ">", "\"", "'"} {
+			url = strings.TrimSuffix(url, suffix)
+		}
+		return url
 	}
 	
 	return ""
