@@ -117,7 +117,7 @@
 //
 // ## Authentication Methods
 //
-// Claude Code CLI uses browser-based OAuth authentication via /login command,
+// Claude Code CLI uses browser-based authentication via setup-token command,
 // NOT API keys. Authentication is done interactively through the Claude CLI.
 //
 // ### 1. Authenticate() - Interactive/Terminal-Based

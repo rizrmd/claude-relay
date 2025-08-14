@@ -24,29 +24,9 @@ type ClaudeSetup struct {
 	claudeHome  string
 }
 
-func NewClaudeSetup() (*ClaudeSetup, error) {
-	// Get the directory where the executable is located
-	execPath, err := os.Executable()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get executable path: %w", err)
-	}
-	
-	baseDir := filepath.Dir(execPath)
-	
-	// Use current directory in development mode
-	if strings.Contains(execPath, "go-build") {
-		baseDir, err = os.Getwd()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get working directory: %w", err)
-		}
-	}
-	
-	return NewClaudeSetupWithBaseDir(baseDir)
-}
-
-// NewClaudeSetupWithBaseDir creates a ClaudeSetup with a custom base directory.
+// New creates a ClaudeSetup with a custom base directory.
 // This allows multiple isolated Claude instances.
-func NewClaudeSetupWithBaseDir(baseDir string) (*ClaudeSetup, error) {
+func New(baseDir string) (*ClaudeSetup, error) {
 	absBaseDir, err := filepath.Abs(baseDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get absolute path: %w", err)
@@ -59,6 +39,7 @@ func NewClaudeSetupWithBaseDir(baseDir string) (*ClaudeSetup, error) {
 		claudeHome: filepath.Join(absBaseDir, ".claude-home"),
 	}, nil
 }
+
 
 func (cs *ClaudeSetup) IsInstalled() bool {
 	// Check if both Bun and Claude are installed
@@ -192,17 +173,29 @@ func (cs *ClaudeSetup) SetupClaudeHome() error {
 		return fmt.Errorf("failed to create Claude config directory: %w", err)
 	}
 
+	// Pre-configure Claude to skip the welcome screen
+	// Set a default theme to avoid the initial setup prompt
+	configFile := filepath.Join(configDir, "config.json")
+	if _, err := os.Stat(configFile); os.IsNotExist(err) {
+		// Create a minimal config to skip welcome
+		config := `{"theme":"dark","hasSeenWelcome":true}`
+		if err := os.WriteFile(configFile, []byte(config), 0644); err != nil {
+			log.Printf("Warning: Failed to create config file: %v", err)
+			// Not fatal, continue anyway
+		}
+	}
+
 	log.Printf("Claude home directory set up at %s", cs.claudeHome)
 	return nil
 }
 
 func (cs *ClaudeSetup) CheckAuthentication() (bool, error) {
-	// Check if Claude is authenticated by looking for the auth file
-	authFile := filepath.Join(cs.claudeHome, ".config", "claude", "auth.json")
-	if _, err := os.Stat(authFile); err == nil {
-		// Verify the auth file contains valid data
-		data, err := os.ReadFile(authFile)
-		if err == nil && len(data) > 10 { // Basic check for non-empty auth
+	// Check if Claude is authenticated by looking for the .claude.json file with oauthAccount
+	claudeConfigFile := filepath.Join(cs.claudeHome, ".claude.json")
+	if _, err := os.Stat(claudeConfigFile); err == nil {
+		// Verify the config file contains oauth account data
+		data, err := os.ReadFile(claudeConfigFile)
+		if err == nil && strings.Contains(string(data), "oauthAccount") {
 			return true, nil
 		}
 	}
@@ -212,10 +205,10 @@ func (cs *ClaudeSetup) CheckAuthentication() (bool, error) {
 
 // GetAuthStatus returns detailed authentication status
 func (cs *ClaudeSetup) GetAuthStatus() (bool, string, error) {
-	authFile := filepath.Join(cs.claudeHome, ".config", "claude", "auth.json")
+	claudeConfigFile := filepath.Join(cs.claudeHome, ".claude.json")
 	
 	// Check if file exists
-	info, err := os.Stat(authFile)
+	info, err := os.Stat(claudeConfigFile)
 	if os.IsNotExist(err) {
 		return false, "No authentication file found", nil
 	}
@@ -229,13 +222,13 @@ func (cs *ClaudeSetup) GetAuthStatus() (bool, string, error) {
 	}
 	
 	// Read and validate
-	data, err := os.ReadFile(authFile)
+	data, err := os.ReadFile(claudeConfigFile)
 	if err != nil {
 		return false, "", fmt.Errorf("failed to read auth file: %w", err)
 	}
 	
-	// Basic validation - check if it looks like JSON with a key
-	if len(data) < 10 || !strings.Contains(string(data), "\"key\"") {
+	// Basic validation - check if it contains oauthAccount
+	if len(data) < 10 || !strings.Contains(string(data), "oauthAccount") {
 		return false, "Authentication file appears invalid", nil
 	}
 	
@@ -304,6 +297,10 @@ func (cs *ClaudeSetup) GetClaudeHome() string {
 	return cs.claudeHome
 }
 
+func (cs *ClaudeSetup) GetBaseDir() string {
+	return cs.baseDir
+}
+
 func (cs *ClaudeSetup) Setup() error {
 	log.Println("Setting up isolated Claude environment...")
 
@@ -322,18 +319,8 @@ func (cs *ClaudeSetup) Setup() error {
 		return fmt.Errorf("failed to setup Claude home: %w", err)
 	}
 
-	// Check authentication
-	authenticated, err := cs.CheckAuthentication()
-	if err != nil {
-		return fmt.Errorf("failed to check authentication: %w", err)
-	}
-
-	if !authenticated {
-		// Run interactive login
-		if err := cs.RunClaudeLogin(); err != nil {
-			return fmt.Errorf("failed to authenticate Claude: %w", err)
-		}
-	}
+	// Don't try to authenticate during setup
+	// Let the user handle authentication separately
 
 	log.Println("Claude setup completed successfully")
 	return nil
@@ -396,7 +383,7 @@ func (cs *ClaudeSetup) CopyAuthFrom(sourceDir string) error {
 
 // GetAuthURL returns the URL for Claude CLI authentication
 func (cs *ClaudeSetup) GetAuthURL() string {
-	// Claude CLI uses OAuth flow, not API keys
+	// Claude CLI uses browser-based authentication, not API keys
 	return "https://console.anthropic.com/login"
 }
 

@@ -4,33 +4,9 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 )
 
-// RunSetupToken runs Claude CLI's setup-token command interactively
-func (cs *ClaudeSetup) RunSetupToken() error {
-	log.Println("Running Claude CLI setup-token...")
-	
-	cmd := exec.Command(cs.claudePath, "setup-token")
-	cmd.Env = cs.GetClaudeEnv()
-	cmd.Dir = cs.baseDir
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("setup-token command failed: %w", err)
-	}
-	
-	// Verify authentication worked
-	if authenticated, _ := cs.CheckAuthentication(); !authenticated {
-		return fmt.Errorf("authentication was not completed")
-	}
-	
-	log.Println("Authentication completed successfully!")
-	return nil
-}
 
 // GetSetupTokenInstructions returns instructions for manual authentication
 func (cs *ClaudeSetup) GetSetupTokenInstructions() string {

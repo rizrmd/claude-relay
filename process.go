@@ -9,16 +9,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
-	"unsafe"
-	"github.com/creack/pty"
 )
 
 type ConversationState struct {
 	History   []string
 	Timestamp time.Time
 }
+
 
 type ClaudeProcess struct {
 	cmd              *exec.Cmd
@@ -31,59 +29,33 @@ type ClaudeProcess struct {
 }
 
 func NewClaudeProcess(setup *ClaudeSetup) (*ClaudeProcess, error) {
+	// First ensure we have a config file to skip welcome
+	configDir := filepath.Join(setup.GetClaudeHome(), ".config", "claude")
+	os.MkdirAll(configDir, 0755)
+	
+	configFile := filepath.Join(configDir, "config.json")
+	if _, err := os.Stat(configFile); os.IsNotExist(err) {
+		// Create config with theme to skip welcome
+		config := `{"theme":"dark","outputStyle":"default"}`
+		os.WriteFile(configFile, []byte(config), 0644)
+	}
+
 	tempDir, err := ioutil.TempDir("", "claude-relay-*")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temp directory: %w", err)
 	}
 
-	log.Printf("Created temporary directory: %s", tempDir)
-
-	// Run claude in default mode with bypass permissions
-	cmd := exec.Command(setup.GetClaudePath(), "--dangerously-skip-permissions")
-	cmd.Dir = tempDir
-	cmd.Env = append(setup.GetClaudeEnv(),
-		"CLAUDE_RELAY=true",
-		"TERM=xterm", // Use xterm instead of dumb for better compatibility
-		"NO_COLOR=1", // Disable colors
-		"LINES=24",
-		"COLUMNS=120",
-	)
-
-	// Start the process with a PTY and set window size
-	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
-		Rows: 24,
-		Cols: 120,
-		X:    0,
-		Y:    0,
-	})
-	if err != nil {
-		os.RemoveAll(tempDir)
-		return nil, fmt.Errorf("failed to start claude process with PTY: %w", err)
-	}
-
-	log.Printf("Started Claude process with PID: %d in directory: %s", cmd.Process.Pid, tempDir)
-
-	// Configure terminal settings - disable echo and enable canonical mode
-	const TCGETS = 0x5401
-	const TCSETS = 0x5402
-	
-	var termios syscall.Termios
-	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, ptmx.Fd(), TCGETS, uintptr(unsafe.Pointer(&termios)))
-	if errno == 0 {
-		// Enable canonical mode (ICANON) and disable echo (ECHO)
-		termios.Lflag |= syscall.ICANON  // Enable line-by-line processing
-		termios.Lflag &^= syscall.ECHO   // Disable echo
-		syscall.Syscall(syscall.SYS_IOCTL, ptmx.Fd(), TCSETS, uintptr(unsafe.Pointer(&termios)))
-		log.Printf("Terminal settings configured")
-	}
-
+	// We don't actually need to start a persistent process
+	// since we use --print mode for each message
+	// Just return the structure
 	return &ClaudeProcess{
-		cmd:              cmd,
-		pty:              ptmx,
+		cmd:              nil,
+		pty:              nil,
 		tempDir:          tempDir,
 		conversationHistory: []string{},
 		conversationStates:  []ConversationState{},
 		lastUndoneHistory:   nil,
+		setup:            setup,
 	}, nil
 }
 
@@ -104,7 +76,6 @@ func (p *ClaudeProcess) Cleanup() error {
 	}
 
 	if p.tempDir != "" {
-		log.Printf("Removing temporary directory: %s", p.tempDir)
 		if err := os.RemoveAll(p.tempDir); err != nil {
 			return fmt.Errorf("failed to remove temp directory: %w", err)
 		}
@@ -167,15 +138,25 @@ func (p *ClaudeProcess) SendMessage(message string) (string, error) {
 	
 	fullPrompt := contextBuilder.String()
 	
-	// Use claude --print mode for this single request
+	// Use claude --print mode for this single request WITHOUT PTY
+	// PTY seems to interfere with --print mode's stdin handling
 	cmd := exec.Command(p.setup.GetClaudePath(), "--print", "--dangerously-skip-permissions")
-	cmd.Dir = p.tempDir
-	cmd.Env = append(p.setup.GetClaudeEnv(),
+	// Run from the base directory for workspace isolation
+	cmd.Dir = p.setup.GetBaseDir()
+	// Use system environment to access authentication, but add Claude-specific env vars
+	cmd.Env = os.Environ()
+	cmd.Env = append(cmd.Env, 
+		fmt.Sprintf("BUN_INSTALL=%s", filepath.Join(p.setup.GetBaseDir(), ".bun")),
+		fmt.Sprintf("PATH=%s:%s", filepath.Join(p.setup.GetBaseDir(), ".bun", "bin"), os.Getenv("PATH")),
+	)
+	// Add additional environment for relay
+	cmd.Env = append(cmd.Env,
 		"CLAUDE_RELAY=true",
-		"TERM=xterm",
+		"TERM=dumb",
 		"NO_COLOR=1",
 	)
 	
+	// Use regular pipes for --print mode
 	cmd.Stdin = strings.NewReader(fullPrompt)
 	
 	var stdout bytes.Buffer
@@ -183,27 +164,29 @@ func (p *ClaudeProcess) SendMessage(message string) (string, error) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	
+	
+	// Run the command
 	err := cmd.Run()
 	if err != nil {
-		// Check if authentication is needed
 		stderrStr := stderr.String()
+		
 		if p.setup.IsAuthenticationNeeded(stderrStr) {
 			return "", fmt.Errorf("authentication required: please restart the server to login")
 		}
 		return "", fmt.Errorf("claude command failed: %w, stderr: %s", err, stderrStr)
 	}
 	
-	response := stdout.String()
+	responseStr := stdout.String()
 	
 	// Add Claude's response to history
-	p.conversationHistory = append(p.conversationHistory, "Claude: "+response)
+	p.conversationHistory = append(p.conversationHistory, "Claude: "+responseStr)
 	
 	// Keep history manageable (last 10 exchanges)
 	if len(p.conversationHistory) > 20 {
 		p.conversationHistory = p.conversationHistory[2:]
 	}
 	
-	return response, nil
+	return responseStr, nil
 }
 
 func (p *ClaudeProcess) SendMessageWithProgress(message string, progressChan chan<- []byte, doneChan <-chan bool) (string, error) {
@@ -229,8 +212,16 @@ func (p *ClaudeProcess) SendMessageWithProgress(message string, progressChan cha
 	
 	// Use claude --print mode for this single request
 	cmd := exec.Command(p.setup.GetClaudePath(), "--print", "--dangerously-skip-permissions")
-	cmd.Dir = p.tempDir
-	cmd.Env = append(p.setup.GetClaudeEnv(),
+	// Run from the base directory for workspace isolation
+	cmd.Dir = p.setup.GetBaseDir()
+	// Use system environment to access authentication, but add Claude-specific env vars
+	cmd.Env = os.Environ()
+	cmd.Env = append(cmd.Env, 
+		fmt.Sprintf("BUN_INSTALL=%s", filepath.Join(p.setup.GetBaseDir(), ".bun")),
+		fmt.Sprintf("PATH=%s:%s", filepath.Join(p.setup.GetBaseDir(), ".bun", "bin"), os.Getenv("PATH")),
+	)
+	// Add additional environment for relay
+	cmd.Env = append(cmd.Env,
 		"CLAUDE_RELAY=true",
 		"TERM=xterm",
 		"NO_COLOR=1",
@@ -286,6 +277,7 @@ func (p *ClaudeProcess) SendMessageWithProgress(message string, progressChan cha
 	if err != nil {
 		// Check if authentication is needed
 		stderrStr := stderr.String()
+		
 		if p.setup.IsAuthenticationNeeded(stderrStr) {
 			return "", fmt.Errorf("authentication required: please restart the server to login")
 		}

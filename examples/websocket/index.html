@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claude Relay - Integration Examples</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+        
+        .header h1 {
+            font-size: 3em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        
+        .examples-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 30px;
+            margin-top: 40px;
+        }
+        
+        .example-card {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .example-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.3);
+        }
+        
+        .example-card .icon {
+            font-size: 2.5em;
+            margin-bottom: 15px;
+            display: block;
+        }
+        
+        .example-card h2 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+        }
+        
+        .example-card p {
+            color: #666;
+            margin-bottom: 20px;
+        }
+        
+        .code-block {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 0.9em;
+            overflow-x: auto;
+            margin: 15px 0;
+            line-height: 1.4;
+        }
+        
+        .interactive-section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #007bff;
+        }
+        
+        .form-group {
+            margin: 15px 0;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #555;
+        }
+        
+        textarea, input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e1e5e9;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s ease;
+            font-family: inherit;
+        }
+        
+        textarea:focus, input:focus {
+            outline: none;
+            border-color: #007bff;
+        }
+        
+        textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+        
+        .btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            display: inline-block;
+            text-decoration: none;
+        }
+        
+        .btn:hover {
+            background: #0056b3;
+            transform: translateY(-1px);
+        }
+        
+        .btn:active {
+            transform: translateY(0);
+        }
+        
+        .response-box {
+            background: white;
+            border: 2px solid #e1e5e9;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+            display: none;
+        }
+        
+        .response-box.show {
+            display: block;
+            animation: slideIn 0.3s ease;
+        }
+        
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .response-text {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            color: #333;
+            line-height: 1.5;
+        }
+        
+        .loading {
+            color: #007bff;
+            font-style: italic;
+        }
+        
+        .error {
+            color: #dc3545;
+            background: #f8d7da;
+            padding: 10px;
+            border-radius: 4px;
+            border-left: 4px solid #dc3545;
+        }
+        
+        .success {
+            color: #155724;
+            background: #d4edda;
+            padding: 10px;
+            border-radius: 4px;
+            border-left: 4px solid #28a745;
+        }
+        
+        .feature-list {
+            list-style: none;
+            margin: 15px 0;
+        }
+        
+        .feature-list li {
+            padding: 8px 0;
+            padding-left: 25px;
+            position: relative;
+        }
+        
+        .feature-list li:before {
+            content: "→";
+            position: absolute;
+            left: 0;
+            color: #007bff;
+            font-weight: bold;
+        }
+        
+        .test-link {
+            display: inline-block;
+            margin-top: 15px;
+            padding: 8px 16px;
+            background: #28a745;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 0.9em;
+            transition: background 0.3s ease;
+        }
+        
+        .test-link:hover {
+            background: #218838;
+        }
+        
+        @media (max-width: 768px) {
+            .examples-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .container {
+                padding: 15px;
+            }
+            
+            .example-card {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 Claude Relay</h1>
+            <p>Complete integration examples for all use cases</p>
+        </div>
+        
+        <div class="examples-grid">
+            <!-- CLI Example -->
+            <div class="example-card">
+                <span class="icon">📝</span>
+                <h2>Basic CLI Pattern</h2>
+                <p>Simple command-line integration - the foundation for all other patterns.</p>
+                
+                <div class="code-block">// Basic CLI usage
+setup, _ := clauderelay.New("./claude-instance")
+process, _ := clauderelay.NewClaudeProcess(setup)
+response, _ := process.SendMessage("Hello Claude!")
+fmt.Println("Claude:", response)</div>
+                
+                <p><strong>To test:</strong> <code>go run main.go --cli</code></p>
+            </div>
+            
+            <!-- Web API Example -->
+            <div class="example-card">
+                <span class="icon">🌐</span>
+                <h2>Web Service API</h2>
+                <p>HTTP REST API for web applications and services.</p>
+                
+                <div class="interactive-section">
+                    <div class="form-group">
+                        <label for="api-message">Test the API:</label>
+                        <textarea id="api-message" placeholder="Enter your message...">What's the capital of France?</textarea>
+                    </div>
+                    <button class="btn" onclick="testAPI()">Send Message</button>
+                    
+                    <div id="api-response" class="response-box">
+                        <strong>Response:</strong>
+                        <div id="api-response-text" class="response-text"></div>
+                    </div>
+                </div>
+                
+                <div class="code-block">// HTTP API endpoint
+POST /api/message
+Content-Type: application/json
+
+{
+  "message": "Your question here"
+}
+
+// Response
+{
+  "response": "Claude's answer..."
+}</div>
+            </div>
+            
+            <!-- WebSocket Example -->
+            <div class="example-card">
+                <span class="icon">🔌</span>
+                <h2>WebSocket Pattern</h2>
+                <p>Real-time bidirectional communication pattern for interactive applications.</p>
+                
+                <div class="code-block">// WebSocket integration
+var claudeProcess *clauderelay.ClaudeProcess
+
+func handleWebSocket(conn *websocket.Conn) {
+    for {
+        var msg Message
+        conn.ReadJSON(&msg)
+        
+        response, _ := claudeProcess.SendMessage(msg.Text)
+        
+        conn.WriteJSON(Response{
+            Text: response,
+            Timestamp: time.Now(),
+        })
+    }
+}</div>
+                
+                <a href="/test?message=Hello from WebSocket pattern!" class="test-link">Test Integration</a>
+                <a href="/chat" class="test-link" style="background: #007bff; margin-left: 10px;">Full Chat UI</a>
+                
+                <p style="margin-top: 15px; font-size: 0.9em; color: #666;">
+                    <strong>Implementation steps:</strong>
+                </p>
+                <ul class="feature-list">
+                    <li>Add gorilla/websocket dependency</li>
+                    <li>Create WebSocket upgrader</li>
+                    <li>Handle messages with claudeProcess.SendMessage()</li>
+                    <li>Stream responses back via WebSocket</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function testAPI() {
+            const message = document.getElementById('api-message').value.trim();
+            if (!message) {
+                alert('Please enter a message');
+                return;
+            }
+            
+            const responseBox = document.getElementById('api-response');
+            const responseText = document.getElementById('api-response-text');
+            
+            // Show response box and loading state
+            responseBox.className = 'response-box show';
+            responseText.className = 'response-text loading';
+            responseText.textContent = 'Processing your request...';
+            
+            try {
+                const res = await fetch('/api/message', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ message: message })
+                });
+                
+                if (!res.ok) {
+                    const errorText = await res.text();
+                    responseText.className = 'response-text error';
+                    responseText.textContent = 'Error: ' + errorText;
+                    return;
+                }
+                
+                const data = await res.json();
+                responseText.className = 'response-text success';
+                responseText.textContent = data.response;
+                
+            } catch (err) {
+                responseText.className = 'response-text error';
+                responseText.textContent = 'Network error: ' + err.message;
+            }
+        }
+        
+        // Allow Enter key to submit
+        document.getElementById('api-message').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && e.ctrlKey) {
+                e.preventDefault();
+                testAPI();
+            }
+        });
+    </script>
+</body>
+</html>
