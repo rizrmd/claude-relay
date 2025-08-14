@@ -1,77 +1,68 @@
-// Basic example of using the clauderelay library to communicate with Claude CLI.
 package main
 
 import (
-	"context"
+	"bufio"
 	"fmt"
+	"io"
 	"log"
+	"os"
+	"strings"
 
 	clauderelay "github.com/rizrmd/claude-relay"
 )
 
 func main() {
-	// Create Claude setup manager
-	setup, err := clauderelay.NewClaudeSetupWithBaseDir("./claude-instance")
+	// Create Claude setup
+	setup, err := clauderelay.New("./claude-instance")
 	if err != nil {
 		log.Fatal("Failed to create setup:", err)
 	}
 
-	// Install Claude CLI if not already installed
+	// Install Claude CLI if needed
 	if !setup.IsInstalled() {
-		fmt.Println("Installing Claude CLI...")
 		if err := setup.Setup(); err != nil {
 			log.Fatal("Failed to install Claude:", err)
 		}
-		fmt.Println("Claude CLI installed successfully!")
 	}
 
 	// Check authentication
-	authenticated, err := setup.CheckAuthentication()
-	if err != nil {
-		log.Printf("Warning: Failed to check authentication: %v", err)
-	}
-
+	authenticated, _ := setup.CheckAuthentication()
 	if !authenticated {
-		fmt.Println("========================================")
-		fmt.Println("Claude needs authentication")
-		fmt.Println("Please complete the login process")
-		fmt.Println("When Claude starts, choose a theme (press 1)")
-		fmt.Println("Then type /login and follow the instructions")
-		fmt.Println("========================================")
-		
-		if err := setup.RunClaudeLogin(); err != nil {
-			log.Fatal("Failed to authenticate:", err)
+		// Interactive authentication
+		reader := bufio.NewReader(os.Stdin)
+		if err := setup.Authenticate(reader); err != nil {
+			log.Fatal("Authentication failed:", err)
 		}
-		fmt.Println("Authentication completed!")
 	}
 
 	// Create Claude process
 	process, err := clauderelay.NewClaudeProcess(setup)
 	if err != nil {
-		log.Fatal("Failed to create Claude process:", err)
+		log.Fatal("Failed to create process:", err)
 	}
-	defer process.Stop()
+	defer process.Kill()
+	defer process.Cleanup()
 
-	// Send some messages to Claude
-	ctx := context.Background()
-	
-	messages := []string{
-		"Hello Claude! What's 2+2?",
-		"Can you write a haiku about Go programming?",
-		"What are the benefits of using Go for backend development?",
-	}
-
-	for _, msg := range messages {
-		fmt.Printf("\nYou: %s\n", msg)
-		
-		response, err := process.SendMessage(ctx, msg)
+	// Read message from stdin or use default
+	var message string
+	if stat, _ := os.Stdin.Stat(); (stat.Mode() & os.ModeCharDevice) == 0 {
+		// Input is piped
+		input, err := io.ReadAll(os.Stdin)
 		if err != nil {
-			log.Printf("Error sending message: %v", err)
-			continue
+			log.Fatal("Failed to read input:", err)
 		}
-		
-		fmt.Printf("Claude: %s\n", response)
+		message = strings.TrimSpace(string(input))
+	}
+	
+	if message == "" {
+		message = "Hello Claude! What's 2+2?"
 	}
 
-	fmt.Println("\nConversation completed!")
+	// Send the message
+	response, err := process.SendMessage(message)
+	if err != nil {
+		log.Fatal("Failed to send message:", err)
+	}
+
+	fmt.Println("Claude:", response)
 }
