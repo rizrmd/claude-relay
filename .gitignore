@@ -1,0 +1,23 @@
+# Rust build artifacts
+/target
+**/*.rs.bk
+Cargo.lock
+
+# Claude CLI installation and runtime files
+.bun/
+.claude-home/
+test-auth-url/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment and config files
+.env
+.env.local

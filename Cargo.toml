@@ -1,0 +1,30 @@
+[package]
+name = "claude-relay"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.41", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+anyhow = "1.0"
+thiserror = "2.0"
+reqwest = { version = "0.12", features = ["blocking", "stream"] }
+zip = "2.2"
+dirs = "5.0"
+tempfile = "3.14"
+portable-pty = "0.8"
+tokio-tungstenite = "0.24"
+futures-util = "0.3"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1.11", features = ["v4"] }
+chrono = "0.4"
+axum = { version = "0.7", features = ["json"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors"] }
+hyper = { version = "1.6", features = ["full"] }
+
+[dev-dependencies]
+pretty_assertions = "1.4"
