@@ -24,26 +24,28 @@ pub struct ClaudeProcess {
 
 impl ClaudeProcess {
     pub fn new(setup: Arc<ClaudeSetup>) -> Result<Self> {
-        // Ensure config file exists to skip welcome
+        // Ensure Claude's config directory exists
         let config_dir = setup.get_claude_home().join(".config").join("claude");
         fs::create_dir_all(&config_dir)?;
         
-        let config_file = config_dir.join("config.json");
-        if !config_file.exists() {
-            let config = r#"{"theme":"dark","outputStyle":"default"}"#;
-            fs::write(&config_file, config)?;
-        }
+        // Generate Claude's configuration from clay.yaml (this includes MCP setup)
+        setup.setup_mcp_config()?;
 
         let temp_dir = TempDir::new()
             .map_err(|e| ClaudeRelayError::Process(format!("Failed to create temp directory: {}", e)))?;
 
-        Ok(ClaudeProcess {
+        let mut process = ClaudeProcess {
             temp_dir,
             conversation_history: Vec::new(),
             conversation_states: Vec::new(),
             last_undone_history: None,
             setup,
-        })
+        };
+
+        // Initialize with context override if configured
+        process.initialize_context()?;
+
+        Ok(process)
     }
 
     pub fn get_working_directory(&self) -> &Path {
@@ -77,7 +79,14 @@ impl ClaudeProcess {
             context.push_str(message);
             context
         } else {
-            message.to_string()
+            // For the first message, include initial context if available
+            let mut full_message = String::new();
+            if let Some(initial_context) = self.setup.get_initial_context() {
+                full_message.push_str(&initial_context);
+                full_message.push_str("\n\n--- User Message ---\n");
+            }
+            full_message.push_str(message);
+            full_message
         };
         
         // Use claude --print mode for this single request
@@ -304,5 +313,33 @@ impl ClaudeProcess {
         }
         
         messages
+    }
+
+    /// Initialize context override from configuration
+    fn initialize_context(&mut self) -> Result<()> {
+        if let Some(initial_context) = self.setup.get_initial_context() {
+            // Add the initial context as a system-level entry
+            // This ensures it's always present but doesn't show up as a user message
+            self.conversation_history.insert(0, format!("System Context: {}", initial_context));
+        }
+        Ok(())
+    }
+
+    /// Get the effective context that should be used for a new conversation
+    pub fn get_effective_context(&self) -> Option<String> {
+        self.setup.get_initial_context()
+    }
+
+    /// Reset conversation with new context override
+    pub fn reset_with_context(&mut self, context: Option<String>) -> Result<()> {
+        self.conversation_history.clear();
+        self.conversation_states.clear();
+        self.last_undone_history = None;
+        
+        if let Some(ctx) = context {
+            self.conversation_history.push(format!("System Context: {}", ctx));
+        }
+        
+        Ok(())
     }
 }

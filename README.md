@@ -1,177 +1,405 @@
-# Claude Relay (Rust)
+# Clay: OpenAI-Compatible Claude Server
 
-A Rust library for communicating with Claude CLI, providing isolated installations and process management. This is a Rust port of the original [Go implementation](https://github.com/rizrmd/claude-relay).
+Clay transforms Claude into an OpenAI-compatible API server, allowing you to use Claude with any OpenAI client library while adding powerful project-specific configuration.
 
-## Features
+## ⚡ Quick Start
 
-- **Isolated Claude CLI Installation**: Manages portable Bun and Claude CLI installations
-- **Process Management**: Spawns and controls Claude CLI processes with conversation state
-- **Authentication Management**: Handles Claude CLI browser-based authentication
-- **Conversation History**: Maintains context across messages with undo/restore functionality
-- **Cross-platform**: Supports macOS and Linux (x64 and ARM64)
+### 1. Download Clay
 
-## Installation
+**macOS:**
+```bash
+curl -L https://github.com/rizrmd/clay/releases/latest/download/clay-macos-x64 -o clay
+chmod +x clay
+```
 
-Add to your `Cargo.toml`:
+**Linux:**
+```bash
+curl -L https://github.com/rizrmd/clay/releases/latest/download/clay-linux-x64 -o clay
+chmod +x clay
+```
+
+### 2. First Run
+
+Clay automatically configures everything for you:
+
+```bash
+# Start Clay server (zero configuration required)
+./clay
+```
+
+On first run, Clay will:
+- Generate a `clay.yaml` configuration file automatically
+- Download and install a portable Claude CLI
+- Guide you through Claude authentication 
+- Start the OpenAI-compatible server on port 3000
+
+### 3. Use with Any OpenAI Client
+
+Once running, use Clay exactly like OpenAI's API:
+
+```bash
+curl -X POST http://localhost:3000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "claude-3-sonnet",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+```
+
+## 🎯 Why Clay?
+
+- **Zero Configuration**: Just run `./clay` - no setup files needed
+- **OpenAI Compatible**: Drop-in replacement for OpenAI API calls
+- **Project Context**: Add custom context that Claude remembers
+- **MCP Support**: Connect to Model Context Protocol servers
+- **Isolated**: Portable installation, doesn't affect your system
+- **Auto-Configuration**: Generates `clay.yaml` automatically and manages Claude CLI config files
+
+## ⚙️ Project Configuration
+
+Clay uses a single `clay.yaml` file to configure both Clay itself and the underlying Claude CLI. When you start Clay, it automatically generates Claude CLI's `config.json` and `mcp.json` files from your `clay.yaml` settings.
+
+Clay automatically creates a `clay.yaml` file when it doesn't exist, so you can run it with zero configuration. However, you'll want to customize it for your project.
+
+### Customizing Configuration
+
+Clay generates a default `clay.yaml` automatically. To customize it for your project, simply edit the file that was created:
+
+```yaml
+# Define context that Claude will remember for every conversation
+context: |
+  You are an expert Python developer working on a data analysis project.
+  The codebase uses pandas, numpy, and scikit-learn.
+  Always suggest type hints and follow PEP 8 conventions.
+
+# Connect to tools and databases via MCP servers
+mcp:
+  servers:
+    # File system access
+    filesystem:
+      command: "npx"
+      args: ["-y", "@modelcontextprotocol/server-filesystem", "."]
+    
+    # Connect to your API
+    myapi:
+      transport: "http"
+      url: "http://localhost:8080/mcp"
+      headers:
+        Authorization: "Bearer ${API_TOKEN}"
+
+# Server settings
+server:
+  port: 3000
+  max_processes: 50
+```
+
+### Regenerate or Validate Configuration
+
+Force regenerate the default configuration:
+
+```bash
+./clay --init-config
+```
+
+Check your configuration is correct:
+
+```bash
+./clay --validate-config
+```
+
+## 📋 Common Use Cases
+
+### 1. Code Assistant for Your Project
+
+```yaml
+context: |
+  You are working on a React TypeScript project with Next.js.
+  
+  Project structure:
+  - /pages - Next.js pages
+  - /components - Reusable React components  
+  - /lib - Utility functions
+  - /types - TypeScript type definitions
+  
+  Code style: Use functional components, prefer const assertions, 
+  include proper JSDoc comments.
+```
+
+### 2. Database Query Helper
+
+```yaml
+context: |
+  You are a PostgreSQL expert working with this database schema:
+  
+  Users table: id, email, created_at, subscription_type
+  Posts table: id, user_id, title, content, published_at
+  Comments table: id, post_id, user_id, content, created_at
+  
+  Always write optimized queries and explain the execution plan.
+
+mcp:
+  servers:
+    database:
+      command: "npx"
+      args: ["-y", "@modelcontextprotocol/server-postgres"]
+      env:
+        DATABASE_URL: "${DATABASE_URL}"
+```
+
+### 3. Documentation Writer
+
+```yaml
+context: |
+  You are a technical writer creating API documentation.
+  
+  Documentation standards:
+  - Use OpenAPI 3.0 specification
+  - Include request/response examples
+  - Add error codes and descriptions
+  - Write clear, concise descriptions
+  - Include authentication requirements
+```
+
+## 🔧 Configuration Options
+
+### Context Configuration
+
+The `context` field lets you define instructions that Claude will remember:
+
+```yaml
+context: |
+  Your role and expertise here.
+  Project-specific information.
+  Coding standards and preferences.
+  Any other context Claude should know.
+```
+
+### MCP Server Types
+
+**Command-based servers** (most common):
+```yaml
+mcp:
+  servers:
+    filesystem:
+      command: "npx"
+      args: ["-y", "@modelcontextprotocol/server-filesystem", "."]
+      env:
+        NODE_ENV: "production"
+```
+
+**HTTP servers** (for remote APIs):
+```yaml
+mcp:
+  servers:
+    myapi:
+      transport: "http"
+      url: "https://api.example.com/mcp"
+      headers:
+        Authorization: "Bearer ${API_TOKEN}"
+      timeout: 30
+```
+
+**WebSocket servers** (for real-time data):
+```yaml
+mcp:
+  servers:
+    realtime:
+      transport: "ws"  
+      url: "ws://localhost:9000/mcp"
+      reconnect: true
+```
+
+### Environment Variables
+
+Reference environment variables in your configuration:
+
+```yaml
+mcp:
+  servers:
+    database:
+      command: "npx"
+      args: ["-y", "@modelcontextprotocol/server-postgres"]
+      env:
+        DATABASE_URL: "${DATABASE_URL}"  # Uses $DATABASE_URL from environment
+```
+
+## 🚀 Advanced Usage
+
+### Custom Port
+
+```bash
+# Run on different port
+./clay --port 8080
+
+# Or set in clay.yaml
+server:
+  port: 8080
+```
+
+### Multiple Projects
+
+Each project can have its own `clay.yaml`:
+
+```bash
+cd /path/to/project1
+./clay --port 3000 &
+
+cd /path/to/project2  
+./clay --port 3001 &
+```
+
+### Status and Debugging
+
+```bash
+# Check installation and auth status
+./clay --status
+
+# Validate configuration without starting server
+./clay --validate-config
+
+# Send test message
+./clay --message "Hello Claude!"
+```
+
+## 🔌 Integration Examples
+
+### Python with OpenAI Library
+
+```python
+import openai
+
+client = openai.OpenAI(
+    base_url="http://localhost:3000/v1",
+    api_key="not-required"  # Clay doesn't require API keys
+)
+
+response = client.chat.completions.create(
+    model="claude-3-sonnet",
+    messages=[{"role": "user", "content": "Help me debug this code"}]
+)
+
+print(response.choices[0].message.content)
+```
+
+### Node.js
+
+```javascript
+import OpenAI from 'openai';
+
+const openai = new OpenAI({
+  baseURL: 'http://localhost:3000/v1',
+  apiKey: 'not-required'
+});
+
+const completion = await openai.chat.completions.create({
+  model: 'claude-3-sonnet',
+  messages: [{ role: 'user', content: 'Explain this algorithm' }],
+});
+
+console.log(completion.choices[0].message.content);
+```
+
+### Curl
+
+```bash
+curl -X POST http://localhost:3000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "claude-3-sonnet",
+    "messages": [
+      {"role": "user", "content": "Write a Python function to calculate fibonacci"}
+    ]
+  }'
+```
+
+## 🛠️ How It Works
+
+Clay creates a bridge between OpenAI-compatible clients and Claude CLI:
+
+1. **Isolated Installation**: Downloads portable Claude CLI and Bun runtime
+2. **Configuration Generation**: Reads `clay.yaml` and generates Claude CLI's `config.json` and `mcp.json` files
+3. **Context Injection**: Adds your custom context to every conversation
+4. **MCP Integration**: Connects Claude to external tools and data sources (proxies HTTP/WebSocket servers)
+5. **API Translation**: Converts OpenAI API calls to Claude CLI commands
+6. **Response Formatting**: Returns Claude responses in OpenAI format
+
+Clay acts as a configuration layer on top of Claude CLI, automatically managing all the Claude-specific config files from your single `clay.yaml` file.
+
+### Files Clay Manages
+
+**Your files:**
+- `clay.yaml` - Your project configuration (you edit this)
+
+**Generated automatically by Clay:**
+- `.claude-home/.config/claude/config.json` - Claude CLI's main configuration
+- `.claude-home/.config/claude/mcp.json` - Claude CLI's MCP server configuration  
+- `.claude-home/.config/claude/clay-mcp.json` - Clay's internal MCP configuration backup
+
+You only need to edit `clay.yaml` - Clay handles the rest.
+
+## 🆘 Troubleshooting
+
+**Clay won't start:**
+```bash
+# Check status and authentication
+./clay --status
+
+# Reinstall Claude CLI
+./clay --setup
+```
+
+**Configuration errors:**
+```bash
+# Validate your clay.yaml
+./clay --validate-config
+
+# Regenerate sample config
+./clay --init-config
+```
+
+**Port conflicts:**
+```bash
+# Use different port
+./clay --port 8080
+```
+
+## 📚 MCP Resources
+
+- [MCP Server Directory](https://github.com/modelcontextprotocol/servers) - Official MCP servers
+- [MCP Documentation](https://spec.modelcontextprotocol.io/) - Protocol specification
+- [Claude MCP Guide](https://docs.anthropic.com/en/docs/build-with-claude/mcp) - Getting started with MCP
+
+---
+
+## For Rust Developers
+
+If you're building Rust applications, you can use Clay as a library:
 
 ```toml
 [dependencies]
-claude-relay = "0.1.0"
+clay = "0.1.0"
 ```
 
-## Library Usage
-
 ```rust
-use claude_relay::{ClaudeSetup, ClaudeProcess};
+use clay::{ClaudeSetup, ClaudeProcess};
 use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize Claude setup
     let setup = Arc::new(ClaudeSetup::new(".")?);
     
-    // Install Claude CLI if needed
     if !setup.is_installed() {
-        setup.setup()?;
+        setup.setup_with_mcp()?;
     }
     
-    // Check and handle authentication
     if !setup.check_authentication()? {
-        println!("Please authenticate with Claude:");
         setup.run_claude_login()?;
     }
     
-    // Create Claude process
     let mut process = ClaudeProcess::new(setup)?;
-    
-    // Send message to Claude
     let response = process.send_message("Hello Claude!")?;
     println!("Claude: {}", response);
     
     Ok(())
 }
 ```
-
-## CLI Tool
-
-The crate includes a CLI tool for direct interaction:
-
-```bash
-# Install the CLI
-cargo install claude-relay
-
-# Send a message (automatically installs Claude CLI and prompts for auth if needed)
-claude-relay --message "What is 2+2?"
-
-# Show status (automatically installs Claude CLI if needed)
-claude-relay
-
-# Manual setup (optional - done automatically when needed)
-claude-relay --setup
-```
-
-## Core API
-
-### Setup and Installation
-
-```rust
-// Create setup manager
-let setup = ClaudeSetup::new(".")?;
-let setup = ClaudeSetup::new("/path/to/base/dir")?;
-
-// Install Claude CLI and dependencies
-setup.setup()?;
-
-// Check if installed
-let installed = setup.is_installed();
-
-// Get installation paths
-let claude_path = setup.get_claude_path();
-let claude_home = setup.get_claude_home();
-```
-
-### Authentication
-
-```rust
-// Check authentication status
-let authenticated = setup.check_authentication()?;
-
-// Run interactive authentication (requires terminal and browser)
-setup.run_claude_login()?;
-
-// Copy authentication from another installation
-setup.copy_auth_from(Path::new("/path/to/auth/dir"))?;
-
-// Set authentication token programmatically
-setup.set_auth_token("session_token")?;
-```
-
-### Process Management
-
-```rust
-// Create Claude process
-let mut process = ClaudeProcess::new(Arc::new(setup))?;
-
-// Send message and get response
-let response = process.send_message("Your message here")?;
-
-// Send message with progress callback (async)
-let response = process.send_message_with_progress(
-    "Message",
-    |progress| println!("{}", progress)
-).await?;
-
-// Undo/restore conversation
-process.undo_last_exchange()?;
-let can_restore = process.can_restore();
-if can_restore {
-    let restored = process.restore_last_undo()?;
-}
-```
-
-### Configuration
-
-```rust
-use claude_relay::Config;
-
-// Load configuration
-let config = Config::load("config.json")?;
-
-// Create default configuration
-let config = Config::default();
-
-// Save configuration
-config.save("config.json")?;
-```
-
-## Architecture Differences from Go Version
-
-- **Memory Safety**: Rust's ownership system ensures automatic cleanup without manual management
-- **Error Handling**: Uses `Result<T, E>` types for explicit error handling
-- **Async Support**: Built-in async/await support with Tokio runtime
-- **Type Safety**: Strong typing prevents runtime errors
-- **Dependencies**: Uses Rust ecosystem equivalents (reqwest for HTTP, zip for archives, etc.)
-
-## Requirements
-
-- Rust 1.70 or higher
-- Internet connection for initial Claude CLI setup
-- macOS or Linux (Windows not tested)
-- Browser access for initial authentication
-
-## Development
-
-```bash
-# Build the project
-cargo build
-
-# Run tests
-cargo test
-
-# Run with verbose logging
-RUST_LOG=debug cargo run -- --setup
-```
-
-## License
-
-MIT License - See LICENSE file for details

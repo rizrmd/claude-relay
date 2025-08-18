@@ -1,16 +1,19 @@
 use crate::error::{ClaudeRelayError, Result};
+use crate::config::{Config, McpConfig};
 use std::env;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use tracing::info;
+use tracing::{info, warn};
+use serde_json::json;
 
 pub struct ClaudeSetup {
     base_dir: PathBuf,
     bun_path: PathBuf,
     claude_path: PathBuf,
     claude_home: PathBuf,
+    config: Option<Config>,
 }
 
 impl ClaudeSetup {
@@ -19,11 +22,25 @@ impl ClaudeSetup {
             .canonicalize()
             .map_err(|e| ClaudeRelayError::Setup(format!("Failed to get absolute path: {}", e)))?;
         
+        // Auto-generate clay.yaml if it doesn't exist
+        let yaml_path = base_dir.join("clay.yaml");
+        if !yaml_path.exists() {
+            let sample_config = Config::generate_sample_yaml();
+            fs::write(&yaml_path, sample_config)?;
+            info!("Generated clay.yaml configuration file at {:?}", yaml_path);
+            println!("📝 Generated clay.yaml configuration file");
+            println!("   Edit this file to customize your MCP servers and context settings");
+        }
+        
+        // Load configuration with priority
+        let config = Config::load_with_priority(&base_dir).ok();
+        
         Ok(ClaudeSetup {
             bun_path: base_dir.join(".bun"),
             claude_path: base_dir.join(".bun").join("bin").join("claude"),
             claude_home: base_dir.join(".claude-home"),
             base_dir,
+            config,
         })
     }
 
@@ -122,14 +139,42 @@ impl ClaudeSetup {
         let config_dir = self.claude_home.join(".config").join("claude");
         fs::create_dir_all(&config_dir)?;
 
-        // Pre-configure Claude to skip the welcome screen
-        let config_file = config_dir.join("config.json");
-        if !config_file.exists() {
-            let config = r#"{"theme":"dark","hasSeenWelcome":true}"#;
-            fs::write(&config_file, config)?;
-        }
+        // Generate Claude's config.json from clay.yaml settings
+        self.generate_claude_config()?;
 
         info!("Claude home directory set up at {:?}", self.claude_home);
+        Ok(())
+    }
+
+    /// Generate Claude CLI's config.json file from clay.yaml configuration
+    pub fn generate_claude_config(&self) -> Result<()> {
+        let config_dir = self.claude_home.join(".config").join("claude");
+        fs::create_dir_all(&config_dir)?;
+        
+        let config_file = config_dir.join("config.json");
+        
+        // Base Claude configuration
+        let mut claude_config = json!({
+            "theme": "dark",
+            "hasSeenWelcome": true,
+            "outputStyle": "default"
+        });
+        
+        // Apply clay.yaml overrides if available
+        if let Some(config) = &self.config {
+            // If we have server config, we can add Claude-specific settings
+            if let Some(server_config) = &config.server {
+                // Claude CLI doesn't directly use port config, but we could add other settings
+                claude_config["maxProcesses"] = json!(server_config.max_processes);
+            }
+            
+            // Add any other Claude-specific configurations from clay.yaml
+            // For now, we keep the basic setup
+        }
+        
+        fs::write(&config_file, serde_json::to_string_pretty(&claude_config)?)?;
+        info!("Generated Claude config.json at {:?}", config_file);
+        
         Ok(())
     }
 
@@ -298,5 +343,162 @@ impl ClaudeSetup {
         };
         
         Ok(url.to_string())
+    }
+
+    /// Get the configuration loaded from clay.yaml or defaults
+    pub fn get_config(&self) -> &Option<Config> {
+        &self.config
+    }
+
+    /// Get initial context from configuration
+    pub fn get_initial_context(&self) -> Option<String> {
+        self.config.as_ref().and_then(|c| c.context.clone())
+    }
+
+    /// Setup MCP configuration file for Claude CLI and regenerate Claude's config
+    pub fn setup_mcp_config(&self) -> Result<()> {
+        // Always regenerate Claude's base configuration
+        self.generate_claude_config()?;
+        
+        // Generate MCP configuration if available
+        if let Some(config) = &self.config {
+            if let Some(mcp_config) = &config.mcp {
+                self.write_mcp_config(mcp_config)?;
+                info!("MCP configuration written successfully");
+            }
+        }
+        Ok(())
+    }
+
+    /// Write MCP configuration to Claude's config directory in the format Claude CLI expects
+    fn write_mcp_config(&self, mcp_config: &McpConfig) -> Result<()> {
+        let config_dir = self.claude_home.join(".config").join("claude");
+        fs::create_dir_all(&config_dir)?;
+        
+        // Claude CLI expects MCP server configuration in a specific format
+        // The file should be named according to Claude CLI's expectations
+        let mcp_config_file = config_dir.join("mcp.json");
+        let mut claude_mcp_config = json!({
+            "mcpServers": {}
+        });
+        
+        for (name, server) in &mcp_config.servers {
+            if server.is_command() {
+                if let Some(command) = &server.command {
+                    claude_mcp_config["mcpServers"][name] = json!({
+                        "command": command,
+                        "args": server.args,
+                        "env": server.env
+                    });
+                }
+            } else if server.is_http() {
+                // For HTTP MCP servers, we create a proxy command that Clay can handle
+                warn!("HTTP MCP server '{}' will be proxied through Clay", name);
+                claude_mcp_config["mcpServers"][name] = json!({
+                    "command": "clay-mcp-proxy",
+                    "args": ["--type", "http", "--name", name],
+                    "env": {}
+                });
+            } else if server.is_websocket() {
+                // For WebSocket MCP servers, we create a proxy command that Clay can handle
+                warn!("WebSocket MCP server '{}' will be proxied through Clay", name);
+                claude_mcp_config["mcpServers"][name] = json!({
+                    "command": "clay-mcp-proxy",
+                    "args": ["--type", "ws", "--name", name], 
+                    "env": {}
+                });
+            }
+        }
+        
+        fs::write(&mcp_config_file, serde_json::to_string_pretty(&claude_mcp_config)?)?;
+        info!("Claude MCP configuration written to {:?}", mcp_config_file);
+        
+        // Also write the original clay MCP config for Clay's own use
+        let clay_mcp_file = config_dir.join("clay-mcp.json");
+        fs::write(&clay_mcp_file, serde_json::to_string_pretty(mcp_config)?)?;
+        info!("Clay MCP configuration written to {:?}", clay_mcp_file);
+        
+        Ok(())
+    }
+
+    /// Validate MCP server configurations
+    pub fn validate_mcp_servers(&self) -> Result<Vec<String>> {
+        let mut issues = Vec::new();
+        
+        if let Some(config) = &self.config {
+            if let Some(mcp_config) = &config.mcp {
+                for (name, server) in &mcp_config.servers {
+                    if server.is_command() {
+                        if let Some(command) = &server.command {
+                            if command.is_empty() {
+                                issues.push(format!("MCP server '{}': command cannot be empty", name));
+                            }
+                        } else {
+                            issues.push(format!("MCP server '{}': command is required for command transport", name));
+                        }
+                    } else if server.is_http() {
+                        if let Some(url) = &server.url {
+                            if !url.starts_with("http://") && !url.starts_with("https://") {
+                                issues.push(format!("MCP server '{}': invalid HTTP URL '{}'", name, url));
+                            }
+                        } else {
+                            issues.push(format!("MCP server '{}': url is required for HTTP transport", name));
+                        }
+                    } else if server.is_websocket() {
+                        if let Some(url) = &server.url {
+                            if !url.starts_with("ws://") && !url.starts_with("wss://") {
+                                issues.push(format!("MCP server '{}': invalid WebSocket URL '{}'", name, url));
+                            }
+                        } else {
+                            issues.push(format!("MCP server '{}': url is required for WebSocket transport", name));
+                        }
+                    } else {
+                        issues.push(format!("MCP server '{}': unable to determine transport type", name));
+                    }
+                }
+            }
+        }
+        
+        Ok(issues)
+    }
+
+    /// Force regenerate clay.yaml file in the base directory
+    pub fn init_config(&self) -> Result<()> {
+        let clay_yaml_path = self.base_dir.join("clay.yaml");
+        
+        if clay_yaml_path.exists() {
+            println!("⚠️  clay.yaml already exists. Overwriting with new template...");
+        }
+        
+        let sample_config = Config::generate_sample_yaml();
+        fs::write(&clay_yaml_path, sample_config)?;
+        
+        info!("Clay.yaml configuration created at {:?}", clay_yaml_path);
+        println!("📝 Generated clay.yaml configuration file");
+        println!("   Edit this file to customize your MCP servers and context settings");
+        
+        Ok(())
+    }
+
+    /// Update the main setup method to include MCP configuration
+    pub fn setup_with_mcp(&self) -> Result<()> {
+        info!("Setting up isolated Claude environment with MCP support...");
+
+        self.install_bun()?;
+        self.install_claude()?;
+        self.setup_claude_home()?;
+        self.setup_mcp_config()?;
+
+        // Validate MCP configuration
+        let issues = self.validate_mcp_servers()?;
+        if !issues.is_empty() {
+            warn!("MCP configuration issues found:");
+            for issue in &issues {
+                warn!("  - {}", issue);
+            }
+        }
+
+        info!("Claude setup with MCP completed successfully");
+        Ok(())
     }
 }

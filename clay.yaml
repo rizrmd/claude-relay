@@ -1,0 +1,54 @@
+# Clay Configuration File
+# Clay generates Claude CLI's config.json and mcp.json from this file
+
+# Initial context that will be injected into every Claude conversation
+context: |
+  You are an expert developer working with Clay, a Rust-based OpenAI-compatible API server.
+  Always follow Rust best practices and maintain high code quality.
+  
+  Project Overview:
+  - Clay acts as a bridge between OpenAI-compatible clients and Claude CLI
+  - It manages portable installations and process lifecycle
+  - Supports MCP (Model Context Protocol) servers for enhanced capabilities
+
+# MCP Server Configuration
+# Clay will generate Claude CLI's mcp.json from this configuration
+mcp:
+  servers:
+    # Command-based MCP server (default when no transport specified)
+    # This will be written directly to Claude CLI's mcp.json
+    filesystem:
+      command: "npx"
+      args: ["-y", "@modelcontextprotocol/server-filesystem", "."]
+      env:
+        NODE_ENV: "production"
+      metadata:
+        description: "File system access for the current project"
+        version: "1.0.0"
+    
+    # HTTP-based MCP server
+    # Clay will create a proxy for this in Claude CLI's mcp.json
+    api_server:
+      transport: "http"
+      url: "http://localhost:8080/mcp"
+      headers:
+        Authorization: "Bearer ${API_TOKEN}"
+        X-Client: "clay-rust"
+      timeout: 30
+      metadata:
+        description: "External API integration server"
+        provider: "custom"
+    
+    # WebSocket-based MCP server
+    # Clay will create a proxy for this in Claude CLI's mcp.json
+    realtime:
+      transport: "ws"
+      url: "ws://localhost:9000/mcp"
+      reconnect: true
+      metadata:
+        description: "Real-time data streaming server"
+
+# Clay Server Configuration
+server:
+  port: 3000
+  max_processes: 100

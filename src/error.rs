@@ -11,6 +11,9 @@ pub enum ClaudeRelayError {
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
     
+    #[error("YAML error: {0}")]
+    Yaml(#[from] serde_yaml::Error),
+    
     #[error("ZIP error: {0}")]
     Zip(#[from] zip::result::ZipError),
     

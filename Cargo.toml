@@ -1,5 +1,5 @@
 [package]
-name = "claude-relay"
+name = "clay"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,15 +7,16 @@ edition = "2021"
 tokio = { version = "1.41", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+serde_yaml = "0.9"
 clap = { version = "4.5", features = ["derive"] }
 anyhow = "1.0"
 thiserror = "2.0"
-reqwest = { version = "0.12", features = ["blocking", "stream"] }
+reqwest = { version = "0.12", features = ["blocking", "stream", "json"] }
 zip = "2.2"
 dirs = "5.0"
 tempfile = "3.14"
 portable-pty = "0.8"
-tokio-tungstenite = "0.24"
+tokio-tungstenite = { version = "0.24", features = ["connect"] }
 futures-util = "0.3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
