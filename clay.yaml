@@ -10,13 +10,13 @@ context: |
   - Clay acts as a bridge between OpenAI-compatible clients and Claude CLI
   - It manages portable installations and process lifecycle
   - Supports MCP (Model Context Protocol) servers for enhanced capabilities
+  - Uses ../clay-mcp for custom MCP server implementations
 
 # MCP Server Configuration
 # Clay will generate Claude CLI's mcp.json from this configuration
 mcp:
   servers:
-    # Command-based MCP server (default when no transport specified)
-    # This will be written directly to Claude CLI's mcp.json
+    # File system access
     filesystem:
       command: "npx"
       args: ["-y", "@modelcontextprotocol/server-filesystem", "."]
@@ -26,27 +26,17 @@ mcp:
         description: "File system access for the current project"
         version: "1.0.0"
     
-    # HTTP-based MCP server
-    # Clay will create a proxy for this in Claude CLI's mcp.json
-    api_server:
-      transport: "http"
-      url: "http://localhost:8080/mcp"
-      headers:
-        Authorization: "Bearer ${API_TOKEN}"
-        X-Client: "clay-rust"
-      timeout: 30
+    # Custom clay-mcp server for enhanced capabilities
+    clay_mcp:
+      command: "node"
+      args: ["../clay-mcp/index.js"]
+      env:
+        NODE_ENV: "production"
+        CLAY_PROJECT_DIR: "."
       metadata:
-        description: "External API integration server"
-        provider: "custom"
-    
-    # WebSocket-based MCP server
-    # Clay will create a proxy for this in Claude CLI's mcp.json
-    realtime:
-      transport: "ws"
-      url: "ws://localhost:9000/mcp"
-      reconnect: true
-      metadata:
-        description: "Real-time data streaming server"
+        description: "Clay-specific MCP server with enhanced project integration"
+        version: "1.0.0"
+        provider: "clay"
 
 # Clay Server Configuration
 server:
