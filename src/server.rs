@@ -160,7 +160,7 @@ pub async fn start_server(claude_setup: Arc<ClaudeSetup>, port: u16) -> crate::R
 async fn health_check() -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "status": "ok",
-        "service": "claude-relay",
+        "service": "clay",
         "version": "0.1.0"
     }))
 }

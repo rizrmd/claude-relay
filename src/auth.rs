@@ -78,26 +78,41 @@ impl ClaudeSetup {
     
     pub fn complete_oauth_flow(&self) -> Result<()> {
         println!("Authentication required. Please complete the following steps:");
+        println!("1. Running setup-token command to get the authentication URL...");
         
-        // Get the auth URL (browser may open automatically)
-        let auth_url = self.get_auth_url();
-        if auth_url.starts_with("http") {
-            println!("1. Visit this URL in your browser: {}", auth_url);
-            println!("   (Browser may have opened automatically)");
-        } else {
-            println!("1. Run: {}", auth_url);
-            println!("   Then visit the URL shown");
-        }
-        
-        println!("2. Complete the authentication process");
-        println!("3. Copy the authorization code you receive");
-        
-        let code = prompt_user("\nPaste the authorization code here: ");
-        if !code.trim().is_empty() {
-            self.complete_auth(code.trim())?;
-            println!("✅ Authentication completed successfully!");
-        } else {
-            return Err(ClaudeRelayError::Authentication("No authentication code provided".into()));
+        // Run the claude setup-token command in PTY to capture the auth URL
+        match self.capture_setup_token_output() {
+            Some(auth_url) => {
+                println!("2. Visit this URL in your browser:");
+                println!("   {}", auth_url);
+                println!("3. Complete the authentication process");
+                println!("4. Copy the authorization code you receive");
+                
+                let code = prompt_user("\nPaste the authorization code here: ");
+                if !code.trim().is_empty() {
+                    self.complete_auth(code.trim())?;
+                    println!("✅ Authentication completed successfully!");
+                } else {
+                    return Err(ClaudeRelayError::Authentication("No authentication code provided".into()));
+                }
+            }
+            None => {
+                // Fallback to manual instructions
+                println!("Could not automatically capture the authentication URL.");
+                println!("Please run this command manually:");
+                println!("   {} setup-token", self.get_claude_path().display());
+                println!("2. Visit the URL shown in your browser");
+                println!("3. Complete the authentication process");
+                println!("4. Copy the authorization code you receive");
+                
+                let code = prompt_user("\nPaste the authorization code here: ");
+                if !code.trim().is_empty() {
+                    self.complete_auth(code.trim())?;
+                    println!("✅ Authentication completed successfully!");
+                } else {
+                    return Err(ClaudeRelayError::Authentication("No authentication code provided".into()));
+                }
+            }
         }
         
         Ok(())

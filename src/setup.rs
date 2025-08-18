@@ -48,7 +48,7 @@ impl ClaudeSetup {
         self.bun_path.exists() && self.claude_path.exists()
     }
 
-    pub fn install_bun(&self) -> Result<()> {
+    pub async fn install_bun(&self) -> Result<()> {
         if self.bun_path.exists() {
             info!("Bun already installed at {:?}", self.bun_path);
             return Ok(());
@@ -59,10 +59,10 @@ impl ClaudeSetup {
         let download_url = self.get_bun_download_url()?;
         
         // Download Bun
-        let response = reqwest::blocking::get(&download_url)
+        let response = reqwest::get(&download_url).await
             .map_err(|e| ClaudeRelayError::Setup(format!("Failed to download Bun: {}", e)))?;
         
-        let bytes = response.bytes()
+        let bytes = response.bytes().await
             .map_err(|e| ClaudeRelayError::Setup(format!("Failed to read Bun download: {}", e)))?;
 
         // Extract the zip
@@ -272,10 +272,10 @@ impl ClaudeSetup {
         &self.base_dir
     }
 
-    pub fn setup(&self) -> Result<()> {
+    pub async fn setup(&self) -> Result<()> {
         info!("Setting up isolated Claude environment...");
 
-        self.install_bun()?;
+        self.install_bun().await?;
         self.install_claude()?;
         self.setup_claude_home()?;
 
@@ -481,10 +481,10 @@ impl ClaudeSetup {
     }
 
     /// Update the main setup method to include MCP configuration
-    pub fn setup_with_mcp(&self) -> Result<()> {
+    pub async fn setup_with_mcp(&self) -> Result<()> {
         info!("Setting up isolated Claude environment with MCP support...");
 
-        self.install_bun()?;
+        self.install_bun().await?;
         self.install_claude()?;
         self.setup_claude_home()?;
         self.setup_mcp_config()?;

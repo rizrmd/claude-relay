@@ -96,7 +96,7 @@ async fn main() -> Result<()> {
     // Run setup if requested (use enhanced MCP setup)
     if args.setup {
         println!("Setting up Claude CLI with MCP support...");
-        claude_setup.setup_with_mcp()?;
+        claude_setup.setup_with_mcp().await?;
         println!("Claude CLI installed successfully!");
         return Ok(());
     }
@@ -104,7 +104,7 @@ async fn main() -> Result<()> {
     // Check if Claude is installed and install automatically if needed
     if !claude_setup.is_installed() {
         println!("Claude CLI is not installed. Installing automatically...");
-        claude_setup.setup_with_mcp()?;
+        claude_setup.setup_with_mcp().await?;
         println!("Claude CLI installed successfully!");
     }
     
